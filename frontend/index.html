@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mochi Agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div aria-hidden class="orb orb-1"></div>
+    <div aria-hidden class="orb orb-2"></div>
+
+    <header>
+      <div class="h-left">
+        <img src="agent-logo.png" alt="" width="32" height="32" class="logo-img">
+        <div>
+          <h1>Mochi</h1>
+          <p class="status" id="status"><span class="dot"></span> Work</p>
+        </div>
+      </div>
+      <div class="h-right">
+        <div class="mode-selector" id="modeSelector">
+          <button class="mode-btn active" data-mode="work">Work</button>
+          <button class="mode-btn" data-mode="docs">Docs</button>
+          <button class="mode-btn" data-mode="debug">Debug</button>
+          <button class="mode-btn" data-mode="creative">Creative</button>
+        </div>
+        <button id="commandsBtn" class="icon-btn" aria-label="Commandes">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+        </button>
+        <button id="clearBtn" class="icon-btn" disabled aria-label="Effacer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+        </button>
+        <button id="logBtn" class="icon-btn" aria-label="Télécharger le journal de conversation (.txt)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </button>
+        <button id="statsBtn" class="icon-btn" aria-label="Statistiques">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </button>
+        <button id="settingsBtn" class="icon-btn" aria-label="Paramètres">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="conversation">
+      <div id="statsPanel" class="hide">
+        <div class="stats-panel-inner">
+          <div class="stats-panel-top">
+            <span>Statistiques</span>
+            <button id="closeStatsBtn" class="icon-btn" aria-label="Fermer" style="width:24px;height:24px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div id="statsContent" class="stats-panel-body">
+            <p class="stats-loading">Chargement...</p>
+          </div>
+        </div>
+      </div>
+      <div id="messages">
+        <div id="empty">
+          <img src="agent-logo.png" alt="" width="64" height="64" class="empty-logo">
+          <h2>Prêt à discuter</h2>
+          <p>Envoie un message pour appeler l'agent.</p>
+        </div>
+      </div>
+      <button id="scrollBtn" class="hide">&#8595;</button>
+    </main>
+
+    <div id="errorBar" class="hide"></div>
+
+    <footer>
+      <form id="form">
+        <div id="inputWrap">
+          <textarea id="input" rows="1" placeholder="Écris un message…" name="message"></textarea>
+          <button type="submit" id="submitBtn" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </form>
+      <p class="footnote"><code>/work</code> <code>/docs</code> <code>/debug</code> <code>/creative</code> <code>/reset</code> <code>/help</code></p>
+    </footer>
+
+    <div id="commandsOverlay" class="hide">
+      <div class="modal">
+        <h3>Commandes</h3>
+        <div class="commands-list">
+          <div class="cmd-row"><code>/work</code><span>Mode Working</span></div>
+          <div class="cmd-row"><code>/docs</code><span>Mode Documentation</span></div>
+          <div class="cmd-row"><code>/debug</code><span>Mode Debug</span></div>
+          <div class="cmd-row"><code>/creative</code><span>Mode Creative</span></div>
+          <div class="cmd-row"><code>/reset</code><span>Réinitialiser la mémoire de l'agent</span></div>
+          <div class="cmd-row"><code>/clear</code><span>Effacer la conversation</span></div>
+          <div class="cmd-row"><code>/help</code><span>Afficher cette aide</span></div>
+          <div class="cmd-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+            <span style="font-size:11px;color:var(--muted-fg)">Bouton <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> : télécharge tout l'historique de la conversation en .txt</span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="closeCommandsBtn" class="modal-btn primary">Fermer</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsOverlay" class="hide">
+      <div class="modal settings-modal">
+        <h3>Paramètres</h3>
+        <p>Configure la connexion et le mode actuel.</p>
+
+        <label for="url">Backend URL</label>
+        <input type="text" id="url" spellcheck="false" value="http://localhost:8000">
+
+        <hr>
+
+        <label for="settingsMode">Mode</label>
+        <select id="settingsMode">
+          <option value="work">Work</option>
+          <option value="docs">Docs</option>
+          <option value="debug">Debug</option>
+          <option value="creative">Creative</option>
+        </select>
+
+        <label for="settingsModel">Modèle</label>
+        <input type="text" id="settingsModel" spellcheck="false" placeholder="ex: openai/gpt-4o-mini">
+
+        <label for="settingsMaxTokens">Max tokens</label>
+        <div class="range-row">
+          <input type="range" id="settingsMaxTokens" min="256" max="32768" step="256" value="4096">
+          <span id="settingsMaxTokensVal">4096</span>
+        </div>
+
+        <label for="settingsTemp">Température</label>
+        <div class="range-row">
+          <input type="range" id="settingsTemp" min="0" max="2" step="0.05" value="0.7">
+          <span id="settingsTempVal">0.7</span>
+        </div>
+
+        <hr>
+
+        <label for="settingsWorkspace">Répertoire du projet</label>
+        <input type="text" id="settingsWorkspace" spellcheck="false" placeholder="ex: C:\Users\nom\projet">
+
+        <div class="modal-actions">
+          <button id="cancelBtn" class="modal-btn">Annuler</button>
+          <button id="saveBtn" class="modal-btn primary">Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
