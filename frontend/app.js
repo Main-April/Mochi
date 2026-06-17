@@ -33,7 +33,7 @@ var cancelBtn = document.getElementById("cancelBtn");
 var saveBtn = document.getElementById("saveBtn");
 var logBtn = document.getElementById("logBtn");
 var statsBtn = document.getElementById("statsBtn");
-var statsPanel = document.getElementById("statsPanel");
+var statsOverlay = document.getElementById("statsOverlay");
 var statsContent = document.getElementById("statsContent");
 var closeStatsBtn = document.getElementById("closeStatsBtn");
 
@@ -618,15 +618,17 @@ function esc(str) {
 }
 
 statsBtn.addEventListener("click", function() {
-  if (!statsPanel.classList.contains("hide")) {
-    statsPanel.classList.add("hide");
+  if (!statsOverlay.classList.contains("hide")) {
+    statsOverlay.classList.add("hide");
     return;
   }
   loadStats();
-  statsPanel.classList.remove("hide");
-  scrollToBottom();
+  statsOverlay.classList.remove("hide");
 });
-closeStatsBtn.addEventListener("click", function() { statsPanel.classList.add("hide"); });
+closeStatsBtn.addEventListener("click", function() { statsOverlay.classList.add("hide"); });
+statsOverlay.addEventListener("click", function(e) {
+  if (e.target === statsOverlay) statsOverlay.classList.add("hide");
+});
 
 updateEmpty();
 setStatus("ready", "work");
