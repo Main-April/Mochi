@@ -483,22 +483,43 @@ form.addEventListener("submit", async function(e) {
             showError(ev.data);
             if (assistantEl) assistantEl.remove();
           } else if (ev.type === "tool_call") {
-            // show tool call info
             var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
             if (bubble) {
-              var toolInfo = document.createElement("div");
-              toolInfo.className = "tool-info";
-              toolInfo.textContent = "\uD83D\uDD27 " + ev.name + "(...)";
-              bubble.appendChild(toolInfo);
+              var wrap = document.createElement("div");
+              wrap.className = "tool-call";
+              var header = document.createElement("div");
+              header.className = "tool-header";
+              header.innerHTML = '<span class="tool-toggle">\u25B6</span> \uD83D\uDD27 ' + esc(ev.name) + '()';
+              var detail = document.createElement("div");
+              detail.className = "tool-detail hide";
+              detail.textContent = JSON.stringify(ev.args, null, 2);
+              header.addEventListener("click", function() {
+                detail.classList.toggle("hide");
+                header.querySelector(".tool-toggle").textContent = detail.classList.contains("hide") ? "\u25B6" : "\u25BC";
+              });
+              wrap.appendChild(header);
+              wrap.appendChild(detail);
+              bubble.appendChild(wrap);
               scrollToBottom();
             }
           } else if (ev.type === "tool_result") {
             var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
             if (bubble) {
-              var toolRes = document.createElement("div");
-              toolRes.className = "tool-result";
-              toolRes.textContent = "\u2713 " + ev.name + " : " + (ev.result || "").slice(0, 80);
-              bubble.appendChild(toolRes);
+              var wrap = document.createElement("div");
+              wrap.className = "tool-res";
+              var header = document.createElement("div");
+              header.className = "tool-header";
+              header.innerHTML = '<span class="tool-toggle">\u25B6</span> \u2713 ' + esc(ev.name);
+              var detail = document.createElement("div");
+              detail.className = "tool-detail hide";
+              detail.textContent = ev.result || "";
+              header.addEventListener("click", function() {
+                detail.classList.toggle("hide");
+                header.querySelector(".tool-toggle").textContent = detail.classList.contains("hide") ? "\u25B6" : "\u25BC";
+              });
+              wrap.appendChild(header);
+              wrap.appendChild(detail);
+              bubble.appendChild(wrap);
               scrollToBottom();
             }
           }
