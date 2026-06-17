@@ -47,10 +47,19 @@ def _log_tool(name: str, args: dict, result: str):
             if len(result.splitlines()) > 10:
                 print(f"|  ... ({len(result.splitlines())} lignes total)")
         print("+--")
+    elif name == "edit_file":
+        path = args.get("path", "")
+        sl = args.get("start_line", "?")
+        el = args.get("end_line", "?")
+        content = args.get("content", "")
+        preview = content[:50].replace("\n", "\\n")
+        if len(content) > 50:
+            preview += "..."
+        print(f"\n+-[{ts}] Edit({sl}-{el}) : {preview} in {path}")
+        print("+--")
     elif name == "write_file":
         path = args.get("path", "")
         content = args.get("content", "")
-        # Aperçu du contenu (premiers 50 chars)
         preview = content[:50].replace("\n", "\\n")
         if len(content) > 50:
             preview += "..."
@@ -70,6 +79,33 @@ def _log_tool(name: str, args: dict, result: str):
         url = args.get("url", "")
         print(f"\n+-[{ts}] Fetch : {url[:80]}...")
         print("+--")
+
+
+def _edit_file(path: str, start_line: int, end_line: int, content: str) -> str:
+    full_path = WORKSPACE / path
+    if not full_path.exists():
+        return f"Erreur : fichier introuvable {full_path}"
+    lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    total = len(lines)
+    if start_line < 1 or start_line > total:
+        return f"Erreur : start_line {start_line} hors limite (1-{total})"
+    if end_line < start_line or end_line > total:
+        return f"Erreur : end_line {end_line} hors limite ({start_line}-{total})"
+    # Normalize new content line endings
+    new_lines = content.splitlines(keepends=True) if content else []
+    if not new_lines:
+        new_lines = [""]
+    # Ensure last line has newline
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines[-1] += "\n"
+    idx_s = start_line - 1
+    idx_e = end_line
+    old_preview = "".join(lines[idx_s:idx_e])[:100].replace("\n", "\\n")
+    lines[idx_s:idx_e] = new_lines
+    full_path.write_text("".join(lines), encoding="utf-8")
+    result = f"Fichier édité : {full_path} (lignes {start_line}-{end_line} remplacées). Ancien: {old_preview}"
+    _log_tool("edit_file", {"path": path, "start_line": start_line, "end_line": end_line, "content": content}, result)
+    return result
 
 
 def _write_file(path: str, content: str) -> str:
@@ -152,6 +188,20 @@ def _web_fetch(url: str) -> str:
 
 TOOLS = [
     ToolDefinition(
+        name="edit_file",
+        description="Remplacer un bloc de lignes dans un fichier existant (ex: lignes 4-10). Plus rapide que write_file pour des modifications ciblées.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Chemin relatif du fichier"},
+                "start_line": {"type": "integer", "description": "Numéro de ligne de début (1-indexed)"},
+                "end_line": {"type": "integer", "description": "Numéro de ligne de fin (inclusif)"},
+                "content": {"type": "string", "description": "Nouveau contenu qui remplace les lignes start_line à end_line"},
+            },
+            "required": ["path", "start_line", "end_line", "content"],
+        },
+    ),
+    ToolDefinition(
         name="write_file",
         description="Ecrire ou creer un fichier sur le disque.",
         parameters={
@@ -216,6 +266,7 @@ TOOLS = [
 ]
 
 _TOOL_MAP = {
+    "edit_file": _edit_file,
     "write_file": _write_file,
     "read_file": _read_file,
     "list_files": _list_files,

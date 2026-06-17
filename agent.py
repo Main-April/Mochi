@@ -614,7 +614,8 @@ class Agent:
         """Retourne le prompt système selon le mode courant."""
         mc = self._mc()
         mode_role = mc.get('role', 'Assistant expert')
-        tools_note = "Outils activés: write_file, read_file, list_files, run_command, web_fetch" if mc.get("tools") else "Outils: désactivés"
+        tools_note = "Outils activés: edit_file, write_file, read_file, list_files, run_command, web_fetch" if mc.get("tools") else "Outils: désactivés"
+        edit_note = "Préfère edit_file (lignes précises) à write_file pour modifier un fichier existant." if mc.get("tools") else ""
         
         mode_prompts = {
             "work": (
@@ -622,6 +623,7 @@ class Agent:
                 f"Mode: Working | {tools_note}\n"
                 "Commande par commande. Tu executes rapidement, sans planification.\n"
                 "Utilise les outils directement. Sois concis et efficace.\n"
+                f"{edit_note}\n"
                 "RÈGLE STRICTE: Pas d'introduction. Pas de tableau d'étapes. Pas de guide. Va droit au but.\n"
                 "IMPORTANT: À la fin de ton travail, ajoute un résumé de ce que tu as fait (fichiers modifiés, actions clés, résultat).\n"
                 "Réponds en français."
@@ -631,6 +633,7 @@ class Agent:
                 f"Mode: Debug | {tools_note}\n"
                 "Tu ne fais que lire et corriger des fichiers. Aucune commande shell, aucun fetch web.\n"
                 "Lis le code, identifie le bug, corrige-le, puis explique le problème.\n"
+                f"{edit_note}\n"
                 "RÈGLE STRICTE: Pas d'introduction. Pas de tableau d'étapes. Juste le fix et l'explication.\n"
                 "IMPORTANT: Termine par un résumé des corrections apportées.\n"
                 "Réponds en français."
@@ -639,6 +642,7 @@ class Agent:
                 f"Tu es {self.name}, {mode_role}.\n"
                 f"Mode: Documentation | {tools_note}\n"
                 "Réponds uniquement à la question posée. Ne planifie rien, n'execute rien.\n"
+                f"{edit_note}\n"
                 "RÈGLE STRICTE: Réponse ultra-courte. Pas d'introduction. Pas de guide.\n"
                 "Réponds en français."
             ),
