@@ -10,11 +10,12 @@
         "work": {
             "label": "Working",
             "description": "code, fichiers, commandes",
-            "model": "nex-agi/nex-n2-pro:free",
+            "model": "qwen/qwen3-coder:free",
+            "fallback_models": ["google/gemma-4-31b-it:free", "openai/gpt-oss-120b:free"],
             "role": "Assistant programmeur doux et efficace",
             "tools": true,
-            "max_tokens": 4096,
-            "temperature": 0.5
+            "max_tokens": 8192,
+            "temperature": 0.4
         },
         "docs": {
             "label": "Documentation",
@@ -22,26 +23,26 @@
             "model": "google/gemma-4-31b-it:free",
             "role": "Rédacteur technique clair",
             "tools": false,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "temperature": 0.3
         },
         "debug": {
             "label": "Debug",
             "description": "analyse et correction de bugs",
-            "model": "openai/gpt-oss-20b:free",
+            "model": "openai/gpt-oss-120b:free",
             "role": "Expert debugging détaillé",
             "tools": true,
             "allowed_tools": ["read_file", "write_file", "list_files"],
-            "max_tokens": 3072,
+            "max_tokens": 8192,
             "temperature": 0.2
         },
         "creative": {
             "label": "Creative",
             "description": "génération créative",
-            "model": "nvidia/nemotron-3-super-120b-a12b:free",
+            "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
             "role": "Assistant créatif imaginatif",
             "tools": false,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "temperature": 0.9
         }
     },
@@ -53,20 +54,9 @@
         "memory_file": "memory.json"
     },
 
-    "cache": {
-        "enabled": true,
-        "cache_dir": ".cache",
-        "ttl": 3600
-    },
-
     "rate_limits": {
         "max_requests_per_minute": 60,
         "max_tokens_per_request": 2048,
         "max_retries": 3
-    },
-
-    "analytics": {
-        "enabled": true,
-        "analytics_file": "analytics.json"
     }
 }
