@@ -1,13 +1,16 @@
-# Mochi Agent
+# Mochi Agent 
+![Logo de Mochi](https://raw.githubusercontent.com/Main-April/Mochi/refs/heads/main/logo.ico?token=GHSAT0AAAAAADVNGEUBGEEQDHFFGZQ6XG7S2RVKRFQ)
 
-Assistant IA polyvalent avec interface web, streaming temps réel, outils intégrés et fallback multi-clés.
+Cet assistant IA vous permet d'interagir avec les modèles OpenRouter que vous voulez. Il vous permet d'écrire du code, de le debugger ou de trouver
+de la documentation. Cet outil ne vous permet donc pas de vibe coder, mais d'avoir un assistant directement intégré pour pouvoir augmenter votre 
+productivité sans perdre le contrôle de votre code.
 
-## Stack
+## Installation
 
-- **Backend** : Python 3.13+, FastAPI, httpx
-- **Frontend** : HTML/CSS/JS vanilla (pas de framework)
-- **LLM** : OpenRouter (multi-modèles avec fallback automatique)
-- **UI native** : pywebview (fenêtre autonome optionnelle)
+```
+# Installation rapide, dans votre dossier de projet ou non.
+git clone "https://github.com/Main-April/Mochi"
+```
 
 ## Fonctionnalités
 
