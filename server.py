@@ -41,8 +41,21 @@ _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 30  # requests per minute per IP
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=TRUSTED_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    allow_credentials=True,
+)
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
+    # Skip security checks for CORS preflight
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
     window = _rate_limit_store[client_ip]
@@ -60,13 +73,6 @@ async def security_middleware(request: Request, call_next):
 
     response = await call_next(request)
     return response
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=TRUSTED_ORIGINS,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
-)
 
 FRONTEND = BASE / "frontend"
 FRONTEND.mkdir(exist_ok=True)

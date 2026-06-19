@@ -1,21 +1,17 @@
 """Lance Mochi Agent dans une fenêtre native."""
-import sys
-import threading
+import sys,threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import uvicorn
+import uvicorn,webview
 from server import app
-import webview
 
 PORT = 8000
 server = None
 
-
 def start_server():
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
-
 
 def main():
     global server

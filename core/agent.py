@@ -162,7 +162,7 @@ class OpenRouter:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": str(result)[:2000],
+                    "content": result["summary"][:2000],
                 })
         content, usage, _ = await self.chat(
             messages, model, max_tokens=max_tokens, api_key=api_key

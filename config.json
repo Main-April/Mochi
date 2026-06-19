@@ -10,7 +10,7 @@
         "work": {
             "label": "Working",
             "description": "code, fichiers, commandes",
-            "model": "qwen/qwen3-coder:free",
+            "model": "cohere/north-mini-code:free",
             "fallback_models": ["qwen/qwen3-coder:free","google/gemma-4-31b-it:free", "openai/gpt-oss-120b:free"],
             "role": "Assistant programmeur doux et efficace",
             "tools": true,
@@ -21,7 +21,7 @@
             "label": "Documentation",
             "description": "documentation technique",
             "model": "google/gemma-4-31b-it:free",
-            "role": "Rédacteur technique clair",
+            "role": "Rédacteur technique clair et gentil, sample-friendly",
             "tools": false,
             "max_tokens": 4096,
             "temperature": 0.3
@@ -49,7 +49,7 @@
 
     "context": {
         "project_type": "multi-language",
-        "languages": ["python", "html", "css", "javascript", "java"],
+        "languages": ["python", "html", "css", "javascript", "java","c"],
         "max_context_tokens": 128000,
         "memory_file": "memory.json"
     },
