@@ -64,42 +64,64 @@ def set_workspace(path: str) -> str | None:
 
 def _log_tool(name: str, args: dict, summary: str, duration_ms: int):
     ts = datetime.now().strftime("%H:%M:%S")
-    dur = f" ({duration_ms}ms)" if duration_ms > 0 else ""
+    dur_s = f"{duration_ms/1000:.1f}s" if duration_ms >= 1000 else f"{duration_ms}ms" if duration_ms > 0 else ""
+
     if name == "run_command":
         cmd = args.get("command", "")
-        action = cmd.strip().split()[0] if cmd.strip() else "cmd"
-        rest = cmd[len(action):].strip()
-        print(f"\n+-[{ts}] Run : {action} {rest}{dur}")
-        lines = summary.splitlines()
-        for line in lines[:10]:
-            print(f"|  {line}")
-        if len(lines) > 10:
-            print(f"|  ... ({len(lines)} lignes total)")
-        print("+--")
+        stdout = (args.get("_stdout", "") or "") if "_stdout" in args else ""
+        stderr = (args.get("_stderr", "") or "") if "_stderr" in args else ""
+        rc = args.get("_returncode", None) if "_returncode" in args else None
+
+        prefix = cmd.strip().split()[0] if cmd.strip() else "cmd"
+        rest = cmd[len(prefix):].strip()
+        label = f"$ {prefix} {rest}" if rest else f"$ {prefix}"
+        if rc is not None and rc != 0:
+            label += f" \u001b[31m\u2716 code={rc}\u001b[0m"
+        print(f"\n\u250c\u2500[{ts}] \u001b[36m{label}\u001b[0m")
+        if stdout:
+            for i, line in enumerate(stdout.splitlines()):
+                if i < 20:
+                    print(f"\u2502  {line}")
+                else:
+                    rest_count = len(stdout.splitlines()) - 20
+                    print(f"\u2502  ... ({rest_count} lignes de plus)")
+                    break
+        if stderr:
+            print(f"\u2502  \u001b[31m[stderr]\u001b[0m")
+            for i, line in enumerate(stderr.splitlines()):
+                if i < 10:
+                    print(f"\u2502  \u001b[31m{line}\u001b[0m")
+                else:
+                    rest_count = len(stderr.splitlines()) - 10
+                    print(f"\u2502  \u001b[31m... ({rest_count} lignes de plus)\u001b[0m")
+                    break
+        if rc is not None and rc != 0:
+            print(f"\u2502  \u001b[41m\u001b[97m exit code {rc} \u001b[0m")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
     elif name == "edit_file":
         path = args.get("path", "")
         sl = args.get("start_line", "?")
         el = args.get("end_line", "?")
-        print(f"\n+-[{ts}] Edit({sl}-{el}) in {path}{dur}")
-        print("+--")
+        print(f"\n\u250c\u2500[{ts}] \u001b[33m[EDIT]\033[0m  {path} (L{sl}-L{el})")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
     elif name == "write_file":
         path = args.get("path", "")
-        print(f"\n+-[{ts}] Write : {path}{dur}")
-        print("+--")
+        print(f"\n\u250c\u2500[{ts}] \u001b[32m[WRITE]\033[0m {path}")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
     elif name == "read_file":
         path = args.get("path", "")
         lines = summary.count("\n") + 1 if summary else 0
-        print(f"\n+-[{ts}] Read : {path} ({lines} lignes){dur}")
-        print("+--")
+        print(f"\n\u250c\u2500[{ts}] \u001b[34m[READ]\033[0m  {path} ({lines} lignes)")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
     elif name == "list_files":
         path = args.get("path", ".")
         count = len(summary.splitlines()) if summary else 0
-        print(f"\n+-[{ts}] List : {path} ({count} items){dur}")
-        print("+--")
+        print(f"\n\u250c\u2500[{ts}] \u001b[35m[LIST]\033[0m  {path} ({count} items)")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
     elif name == "web_fetch":
         url = args.get("url", "")
-        print(f"\n+-[{ts}] Fetch : {url[:80]}...{dur}")
-        print("+--")
+        print(f"\n\u250c\u2500[{ts}] \u001b[36m[FETCH]\033[0m {url[:80]}{'...' if len(url) > 80 else ''}")
+        print(f"\u2514\u2500\u2500 dur\u00e9e={dur_s}")
 
 
 def _format_result(name: str, summary: str, data: dict) -> dict:
@@ -295,6 +317,12 @@ def _run_command(command: str) -> dict:
         summary = out or "(aucune sortie)"
         if result.returncode != 0:
             summary = f"[code {result.returncode}] {summary}"
+        _log_tool("run_command", {
+            "command": command,
+            "_stdout": stdout,
+            "_stderr": stderr,
+            "_returncode": result.returncode,
+        }, summary, dur)
         return _format_result("run_command", summary, {
             "command": command,
             "stdout": stdout,
@@ -305,10 +333,12 @@ def _run_command(command: str) -> dict:
     except subprocess.TimeoutExpired:
         dur = int((time.monotonic() - t0) * 1000)
         msg = "Erreur : commande a expiré (120s)"
+        _log_tool("run_command", {"command": command, "_returncode": -1}, msg, dur)
         return _format_result("run_command", msg, {"command": command, "error": msg, "duration_ms": dur})
     except Exception as e:
         dur = int((time.monotonic() - t0) * 1000)
         msg = f"Erreur : {e}"
+        _log_tool("run_command", {"command": command, "_returncode": -1}, msg, dur)
         return _format_result("run_command", msg, {"command": command, "error": msg, "duration_ms": dur})
 
 
@@ -354,6 +384,7 @@ def _web_fetch(url: str) -> dict:
         content = resp.text[:10000]
         dur = int((time.monotonic() - t0) * 1000)
         summary = f"Contenu de {url} : {len(content)} caractères"
+        _log_tool("web_fetch", {"url": url}, summary, dur)
         return _format_result("web_fetch", summary, {
             "url": url,
             "content": content,
@@ -365,6 +396,7 @@ def _web_fetch(url: str) -> dict:
     except Exception as e:
         dur = int((time.monotonic() - t0) * 1000)
         msg = f"Erreur de fetch : {e}"
+        _log_tool("web_fetch", {"url": url}, msg, dur)
         return _format_result("web_fetch", msg, {"url": url, "error": msg, "duration_ms": dur})
 
 

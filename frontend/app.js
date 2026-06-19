@@ -49,12 +49,12 @@ var MODE_LABELS = { work: "Work", docs: "Docs", debug: "Debug", creative: "Creat
 var toolCalls = {};
 
 var TOOL_ICONS = {
-  edit_file: '\u270F\uFE0F',
-  write_file: '\u2795',
-  read_file: '\uD83D\uDCD6',
-  list_files: '\uD83D\uDCC1',
-  run_command: '\uD83D\uDD27',
-  web_fetch: '\uD83C\uDF10',
+  edit_file: '<i class="fa-solid fa-pen-to-square"></i>',
+  write_file: '<i class="fa-solid fa-file-circle-plus"></i>',
+  read_file: '<i class="fa-solid fa-book-open"></i>',
+  list_files: '<i class="fa-solid fa-folder-tree"></i>',
+  run_command: '<i class="fa-solid fa-terminal"></i>',
+  web_fetch: '<i class="fa-solid fa-globe"></i>',
 };
 
 var TOOL_LABELS = {
@@ -419,12 +419,12 @@ function renderToolCard(name, args, result) {
 
   var toggle = document.createElement("span");
   toggle.className = "tool-card-toggle";
-  toggle.textContent = "\u25BC";
+  toggle.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
   header.appendChild(toggle);
 
   var icon = document.createElement("span");
   icon.className = "tool-card-icon";
-  icon.textContent = TOOL_ICONS[name] || "\u2699\uFE0F";
+  icon.innerHTML = TOOL_ICONS[name] || '<i class="fa-solid fa-wrench"></i>';
   header.appendChild(icon);
 
   var label = document.createElement("span");
@@ -455,17 +455,17 @@ function renderToolCard(name, args, result) {
   if (!result) {
     statusIcon.innerHTML = '<span class="spinner"></span>';
   } else if (isError) {
-    statusIcon.innerHTML = '\u2716';
+    statusIcon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
     statusIcon.style.color = "#ef4444";
   } else {
-    statusIcon.innerHTML = '\u2714';
+    statusIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
     statusIcon.style.color = "#34d399";
   }
   header.appendChild(statusIcon);
 
   header.addEventListener("click", function() {
     var expanded = card.classList.toggle("collapsed");
-    toggle.textContent = expanded ? "\u25B6" : "\u25BC";
+    toggle.innerHTML = expanded ? '<i class="fa-solid fa-chevron-right"></i>' : '<i class="fa-solid fa-chevron-down"></i>';
   });
 
   card.appendChild(header);
@@ -601,7 +601,7 @@ function renderFileTree(items) {
     el.className = "tree-item";
     var icon = document.createElement("span");
     icon.className = "tree-icon";
-    icon.textContent = item.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+    icon.innerHTML = item.type === "dir" ? '<i class="fa-regular fa-folder"></i>' : '<i class="fa-regular fa-file"></i>';
     el.appendChild(icon);
     var name = document.createElement("span");
     name.className = "tree-name";
@@ -631,25 +631,46 @@ function renderCommandOutput(data) {
   var cmdLine = document.createElement("div");
   cmdLine.className = "cmd-line";
   cmdLine.innerHTML = '<span class="cmd-prompt">$</span> <span class="cmd-text">' + esc(data.command || "") + '</span>';
+  if (data.duration_ms !== undefined && data.duration_ms !== null) {
+    var dur = data.duration_ms > 1000 ? (data.duration_ms / 1000).toFixed(1) + "s" : data.duration_ms + "ms";
+    var durEl = document.createElement("span");
+    durEl.style.cssText = "margin-left:auto;font-size:11px;color:var(--muted-fg);font-family:monospace";
+    durEl.textContent = dur;
+    cmdLine.appendChild(durEl);
+  }
   container.appendChild(cmdLine);
 
-  if (data.stdout) {
+  function _makeOutputBlock(text, className, maxLines) {
+    var lines = text.split("\n");
+    var isTruncated = lines.length > maxLines;
+    var displayLines = isTruncated ? lines.slice(0, maxLines) : lines;
+
     var pre = document.createElement("pre");
-    pre.className = "cmd-output";
-    pre.textContent = data.stdout;
+    pre.className = className;
+    pre.textContent = displayLines.join("\n");
     container.appendChild(pre);
+
+    if (isTruncated) {
+      var toggle = document.createElement("div");
+      toggle.style.cssText = "cursor:pointer;font-size:11px;color:var(--primary);text-align:center;padding:4px;user-select:none";
+      toggle.textContent = "Afficher tout (" + lines.length + " lignes) \u25BC";
+      toggle.addEventListener("click", function() {
+        var expanded = pre.textContent.length < text.length;
+        pre.textContent = expanded ? text : displayLines.join("\n");
+        toggle.textContent = expanded ? "R\u00E9duire \u25B2" : "Afficher tout (" + lines.length + " lignes) \u25BC";
+      });
+      container.appendChild(toggle);
+    }
+  }
+
+  if (data.stdout) {
+    _makeOutputBlock(data.stdout, "cmd-output", 30);
   }
   if (data.stderr) {
-    var pre = document.createElement("pre");
-    pre.className = "cmd-error";
-    pre.textContent = data.stderr;
-    container.appendChild(pre);
+    _makeOutputBlock(data.stderr, "cmd-error", 15);
   }
   if (!data.stdout && !data.stderr && data.error) {
-    var pre = document.createElement("pre");
-    pre.className = "cmd-error";
-    pre.textContent = data.error;
-    container.appendChild(pre);
+    _makeOutputBlock(data.error, "cmd-error", 15);
   }
   if (data.returncode !== undefined && data.returncode !== 0) {
     var rc = document.createElement("div");
