@@ -15,7 +15,7 @@ from pydantic import BaseModel
 _ME = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 sys.path.insert(0, str(_ME))
 
-from agent import Agent, MODE_META
+from core.agent import Agent, MODE_META
 
 agent: Agent | None = None
 BASE = _ME
@@ -124,7 +124,7 @@ async def set_mode(body: ModeIn):
 @app.get("/settings")
 async def get_settings():
     mc = agent._mc()
-    from tools import WORKSPACE
+    from core.tools import WORKSPACE
     return {
         "mode": agent.current_mode,
         "model": mc.get("model", ""),
@@ -150,11 +150,11 @@ async def set_settings(body: SettingsIn):
     if body.temperature is not None:
         mc["temperature"] = body.temperature
     if body.workspace is not None:
-        from tools import set_workspace
+        from core.tools import set_workspace
         set_workspace(body.workspace)
     agent.current_mode = old_mode
     agent._invalidate_mc()
-    from tools import WORKSPACE
+    from core.tools import WORKSPACE
     return {
         "mode": target,
         "model": mc.get("model", ""),

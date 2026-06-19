@@ -9,10 +9,13 @@ from collections import deque
 
 import httpx
 
-from tools import TOOLS, execute_tool
-from parser import clean as _clean_response, compress as _compress
+from .tools import TOOLS, execute_tool
+from .parser import clean as _clean_response, compress as _compress
 
 _JSON_ENSURE = {"ensure_ascii": False}
+
+# Project root (2 levels up from core/agent.py → Agent/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _build_tools_dict() -> list:
@@ -116,10 +119,6 @@ class OpenRouter:
         tools: list | None = None,
         api_key: str | None = None,
     ) -> tuple[str, dict | None, list | None]:
-        """
-        Retourne (content, usage, tool_calls).
-        content peut être "" si le modèle répond uniquement avec des tool_calls.
-        """
         p: dict = {
             "model": model,
             "messages": messages,
@@ -142,10 +141,6 @@ class OpenRouter:
         api_key: str | None = None,
         max_rounds: int = 10,
     ) -> tuple[str, dict | None]:
-        """
-        Boucle d'exécution des tool calls jusqu'à ce que le modèle réponde
-        sans tool call, ou jusqu'à max_rounds.
-        """
         usage_acc: dict = {}
         for _ in range(max_rounds):
             content, usage, tool_calls = await self.chat(
@@ -159,7 +154,6 @@ class OpenRouter:
                     tc["function"]["name"],
                     json.loads(tc["function"]["arguments"]),
                 )
-                # content vide → "" plutôt que None pour la compatibilité providers
                 messages.append({
                     "role": "assistant",
                     "content": content or "",
@@ -170,7 +164,6 @@ class OpenRouter:
                     "tool_call_id": tc["id"],
                     "content": str(result)[:2000],
                 })
-        # Dernier appel sans outils pour forcer une réponse texte
         content, usage, _ = await self.chat(
             messages, model, max_tokens=max_tokens, api_key=api_key
         )
@@ -186,14 +179,6 @@ class OpenRouter:
         tools: list | None = None,
         api_key: str | None = None,
     ):
-        """
-        Générateur async qui yield des tuples (event_type, data) :
-          ("content", str)
-          ("tool_calls", list)
-          ("usage", dict)
-          ("done", str)  ← contenu complet accumulé
-          ("error", str)
-        """
         p: dict = {
             "model": model,
             "messages": messages,
@@ -293,7 +278,6 @@ class OpenRouter:
 # ---------------------------------------------------------------------------
 
 def _merge_usage(acc: dict, u: dict | None):
-    """Accumule les compteurs de tokens dans acc (mutation en place)."""
     if not u:
         return
     acc["prompt_tokens"] = acc.get("prompt_tokens", 0) + (u.get("prompt_tokens") or 0)
@@ -354,7 +338,6 @@ class Memory:
         self._save()
 
     def add_system(self, content: str):
-        # Remplace le system existant s'il y en a un, sinon insère en tête
         if self.messages and self.messages[0]["role"] == "system":
             old_len = len(self.messages[0].get("content") or "")
             self._cc -= old_len
@@ -375,18 +358,13 @@ class Memory:
         self._save()
 
     def _prune(self):
-        """
-        Supprime les messages les plus anciens (en préservant le system)
-        jusqu'à ce que _cc <= max_chars.
-        """
         i = 0
         while self._cc > self.max_chars and i < len(self.messages):
             if self.messages[i].get("role") == "system":
-                i += 1  # ne jamais supprimer le message système
+                i += 1
                 continue
             removed = self.messages.pop(i)
             self._cc -= len(removed.get("content") or "")
-            # i reste inchangé : on réexamine la même position
 
     def count(self) -> int:
         return len(self.messages)
@@ -410,14 +388,16 @@ MODE_META = {
 
 class Agent:
     def __init__(self, config_path: str = "config.json"):
-        config = json.loads(Path(config_path).read_text(encoding="utf-8"))
-        _load_env(Path(config_path).parent / ".env")
+        config_file = (_PROJECT_ROOT / config_path).resolve()
+        config = json.loads(config_file.read_text(encoding="utf-8"))
+        _load_env(config_file.parent / ".env")
         self.config = config
         self.name: str = config["agent"]["name"]
 
         ctx = config["context"]
+        memory_file = (_PROJECT_ROOT / ctx.get("memory_file", "memory.json")).resolve()
         self.memory = Memory(
-            filepath=ctx.get("memory_file", "memory.json"),
+            filepath=str(memory_file),
             max_chars=ctx.get("max_context_tokens", 120_000),
         )
 
@@ -432,7 +412,6 @@ class Agent:
         self._mc_cache: dict | None = None
         self._fallback: str = "openai/gpt-oss-120b:free"
 
-        # Token usage — protégé par un lock pour les accès concurrents
         self.token_usage: dict = {"prompt": 0, "completion": 0, "total": 0}
         self._usage_lock = asyncio.Lock()
 
@@ -479,7 +458,6 @@ class Agent:
         )
 
     def _tools(self) -> list | None:
-        """Retourne la liste des outils sérialisés si activés pour ce mode."""
         if self._mc().get("tools", False):
             all_tools = _build_tools_dict()
             allowed = self._mc().get("allowed_tools")
@@ -536,9 +514,6 @@ class Agent:
         api_key: str | None = None,
         temp: float = 0.7,
     ) -> tuple[str, dict | None, list | None]:
-        """
-        Appel simple avec fallback multi-clés et parse automatique.
-        """
         model   = model   or self._model()
         mt      = mt      or self._mt()
         api_key = api_key or self._api_key()
@@ -576,9 +551,6 @@ class Agent:
         api_key: str | None = None,
         temp: float = 0.7,
     ) -> tuple[str, dict | None]:
-        """
-        Appel tool calls avec fallback multi-clés et parse automatique.
-        """
         model   = model   or self._model()
         mt      = mt      or self._mt()
         api_key = api_key or self._api_key()
@@ -611,7 +583,6 @@ class Agent:
     # ------------------------------------------------------------------
 
     def _system_prompt(self) -> str:
-        """Retourne le prompt système selon le mode courant."""
         mc = self._mc()
         mode_role = mc.get('role', 'Assistant expert')
         tools_note = "Outils activés: edit_file, write_file, read_file, list_files, run_command, web_fetch" if mc.get("tools") else "Outils: désactivés"
@@ -672,7 +643,6 @@ class Agent:
         return mode_prompts.get(self.current_mode, mode_prompts["work"])
 
     def _plan_prompt(self) -> str:
-        """Retourne le prompt de planification selon le mode courant."""
         if self.current_mode == "docs":
             return "Aucune planification. Réponds directement."
         base = (
@@ -689,7 +659,6 @@ class Agent:
         return mode_specific.get(self.current_mode, base)
 
     async def chat_async(self, message: str) -> str:
-        """Conversation simple avec mémoire."""
         self.memory.add("user", message)
         msgs = self.memory.get()
         content, usage, tool_calls = await self._call(
@@ -705,7 +674,6 @@ class Agent:
         return cleaned
 
     async def gen(self, task: str) -> str:
-        """Dispatch selon le mode courant."""
         if self.current_mode == "docs":
             return await self._gen_docs(task)
         elif self.current_mode == "debug":
@@ -721,7 +689,6 @@ class Agent:
         mt: int,
         ak: str | None,
     ) -> str:
-        """Exécute une étape unique, avec gestion des tool calls si activés."""
         step_prompt = (
             f"{self._system_prompt()}\n\n"
             "MÉTHODE: Analyse → Plan → Exécute → Valide\n"
@@ -747,7 +714,6 @@ class Agent:
         return content
 
     async def _gen_work(self, task: str) -> str:
-        """Mode working : execution directe, commande par commande."""
         model = self._model()
         ak    = self._api_key()
         tools = self._tools()
@@ -764,7 +730,6 @@ class Agent:
         return cleaned
 
     async def _gen_docs(self, task: str) -> str:
-        """Mode docs : juste répondre, ni planification ni execution."""
         model = self._model()
         ak    = self._api_key()
 
@@ -779,7 +744,6 @@ class Agent:
         return _clean_response(content)
 
     async def _gen_debug(self, task: str) -> str:
-        """Mode debug : lire et corriger les fichiers, puis expliquer."""
         model = self._model()
         ak    = self._api_key()
         tools = self._tools()
@@ -796,7 +760,6 @@ class Agent:
         return _clean_response(content)
 
     async def generate_stream(self, task: str):
-        """Dispatch streaming selon le mode courant."""
         if self.current_mode == "docs":
             async for event, data in self._gen_docs_stream(task):
                 yield event, data
@@ -808,7 +771,6 @@ class Agent:
                 yield event, data
 
     async def _gen_work_stream(self, task: str):
-        """Streaming working : rapide, fallback seulement si aucun contenu yieldé."""
         mc    = self._mc()
         model = mc.get("model", "openai/gpt-4o-mini")
         mt    = mc.get("max_tokens") or self.config["rate_limits"].get("max_tokens_per_request", 4096)
@@ -888,7 +850,6 @@ class Agent:
                 break
 
     async def _gen_docs_stream(self, task: str):
-        """Streaming docs : fallback seulement si aucun contenu yieldé."""
         mc    = self._mc()
         model = mc.get("model", "openai/gpt-4o-mini")
         ak    = self._api_key()
@@ -926,7 +887,6 @@ class Agent:
                     await asyncio.sleep(2)
 
     async def _gen_debug_stream(self, task: str):
-        """Streaming debug : fallback seulement si aucun contenu yieldé."""
         mc    = self._mc()
         model = mc.get("model", "openai/gpt-4o-mini")
         mt    = mc.get("max_tokens") or self.config["rate_limits"].get("max_tokens_per_request", 4096)
@@ -1025,7 +985,6 @@ class Agent:
         return f"Mode: {MODE_META.get(mode, {}).get('label', mode)}"
 
     def _rebuild(self):
-        """Réinitialise la mémoire avec le prompt système du mode courant."""
         self.memory.clear()
         self.memory.add_system(self._system_prompt())
 
@@ -1040,11 +999,7 @@ class Agent:
     # ------------------------------------------------------------------
 
     def save_session(self, name: str) -> str:
-        """
-        Sauvegarde la session dans sessions/<name>.json.
-        Ne modifie PAS memory.filepath (séparation des responsabilités).
-        """
-        p = Path("sessions") / f"{name}.json"
+        p = _PROJECT_ROOT / "sessions" / f"{name}.json"
         p.parent.mkdir(exist_ok=True)
         json.dump(
             {
@@ -1059,13 +1014,12 @@ class Agent:
         return f"Session '{name}' sauvegardée dans {p}."
 
     def load_session(self, name: str) -> str:
-        p = Path("sessions") / f"{name}.json"
+        p = _PROJECT_ROOT / "sessions" / f"{name}.json"
         if not p.exists():
             return f"Session '{name}' introuvable."
         d = json.loads(p.read_text(encoding="utf-8"))
         self.memory.messages = d["messages"]
         self.memory._cc = sum(len(m.get("content") or "") for m in self.memory.messages)
-        # Ne change pas memory.filepath : la session active reste en mémoire.json
         self.current_mode = d.get("mode", "work")
         self._invalidate_mc()
         self._fallback = self._mc().get("fallback", "openai/gpt-oss-120b:free")

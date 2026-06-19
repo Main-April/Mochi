@@ -1,7 +1,7 @@
 import json
 import sys
 import asyncio
-from agent import Agent, logo_to_ascii, MODE_META
+from core.agent import Agent, logo_to_ascii, MODE_META
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
