@@ -1,4 +1,6 @@
 # Mochi Agent 
+## Ne pas laisser les IA prendre le contrôle du code.
+
 ![Logo Mochi](https://raw.githubusercontent.com/Main-April/Mochi/refs/heads/main/logo.ico?token=GHSAT0AAAAAADVNGEUBGEEQDHFFGZQ6XG7S2RVKRFQ)
 
 Cet assistant IA vous permet d'interagir avec les modèles OpenRouter que vous voulez. Il vous permet d'écrire du code, de le debugger ou de trouver
