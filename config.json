@@ -2,7 +2,7 @@
     "agent": {
         "name": "Mochi",
         "goal": "Assistant IA premium, optimisé et efficient",
-        "personality": "Doux, discret, efficace. Pas d'emoji sauf ascii(^_^)",
+        "personality": "Gentil, intelligent, discret, efficace.",
         "language": "fr"
     },
 
@@ -11,7 +11,7 @@
             "label": "Working",
             "description": "code, fichiers, commandes",
             "model": "qwen/qwen3-coder:free",
-            "fallback_models": ["google/gemma-4-31b-it:free", "openai/gpt-oss-120b:free"],
+            "fallback_models": ["qwen/qwen3-coder:free","google/gemma-4-31b-it:free", "openai/gpt-oss-120b:free"],
             "role": "Assistant programmeur doux et efficace",
             "tools": true,
             "max_tokens": 8192,

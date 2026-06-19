@@ -1,4 +1,6 @@
 ﻿import subprocess
+import shlex
+import ipaddress
 import httpx
 from pathlib import Path
 from datetime import datetime
@@ -25,10 +27,31 @@ class ToolDefinition:
 
 WORKSPACE = Path.cwd()
 
+def _safe_path(path: str | list) -> Path | list | str:
+    """Resolve and validate path stays within WORKSPACE. Returns error string if invalid."""
+    if isinstance(path, list):
+        result = []
+        for p in path:
+            r = _safe_path(p)
+            if isinstance(r, str):
+                return r
+            result.append(r)
+        return result
+    p = Path(path)
+    if p.is_absolute():
+        return "Erreur: chemin absolu interdit"
+    resolved = (WORKSPACE / p).resolve()
+    try:
+        resolved.relative_to(WORKSPACE.resolve())
+    except ValueError:
+        return f"Erreur: accès en dehors du workspace interdit ({resolved})"
+    return resolved
+
 def set_workspace(path: str):
     global WORKSPACE
     p = Path(path).expanduser().resolve()
-    p.mkdir(parents=True, exist_ok=True)
+    if not p.exists():
+        return "Erreur: le dossier n'existe pas"
     WORKSPACE = p
 
 
@@ -82,9 +105,14 @@ def _log_tool(name: str, args: dict, result: str):
 
 
 def _edit_file(path: str, start_line: int, end_line: int, content: str) -> str:
-    full_path = WORKSPACE / path
+    fp = _safe_path(path)
+    if isinstance(fp, str):
+        return fp
+    full_path: Path = fp
     if not full_path.exists():
         return f"Erreur : fichier introuvable {full_path}"
+    if not full_path.is_file():
+        return f"Erreur : {full_path} n'est pas un fichier"
     lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
     total = len(lines)
     if start_line < 1 or start_line > total:
@@ -109,7 +137,10 @@ def _edit_file(path: str, start_line: int, end_line: int, content: str) -> str:
 
 
 def _write_file(path: str, content: str) -> str:
-    full_path = WORKSPACE / path
+    fp = _safe_path(path)
+    if isinstance(fp, str):
+        return fp
+    full_path: Path = fp
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(content, encoding="utf-8")
     result = f"Fichier créé : {full_path}"
@@ -121,15 +152,20 @@ def _read_file(path: str | list) -> str:
     if isinstance(path, list):
         parts = []
         for p in path:
-            full = WORKSPACE / p
-            if not full.exists():
-                parts.append(f"--- {p} ---\nErreur : fichier introuvable {full}")
+            fp = _safe_path(p)
+            if isinstance(fp, str):
+                parts.append(f"--- {p} ---\n{fp}")
+            elif not fp.exists():
+                parts.append(f"--- {p} ---\nErreur : fichier introuvable {fp}")
             else:
-                parts.append(f"--- {p} ---\n{full.read_text(encoding='utf-8')}")
+                parts.append(f"--- {p} ---\n{fp.read_text(encoding='utf-8')}")
         result = "\n\n".join(parts)
         _log_tool("read_file", {"path": path}, result)
         return result
-    full_path = WORKSPACE / path
+    fp = _safe_path(path)
+    if isinstance(fp, str):
+        return fp
+    full_path: Path = fp
     if not full_path.exists():
         result = f"Erreur : fichier introuvable {full_path}"
         _log_tool("read_file", {"path": path}, result)
@@ -140,7 +176,10 @@ def _read_file(path: str | list) -> str:
 
 
 def _list_files(path: str = ".") -> str:
-    full_path = WORKSPACE / path
+    fp = _safe_path(path)
+    if isinstance(fp, str):
+        return fp
+    full_path: Path = fp
     if not full_path.exists():
         result = f"Erreur : dossier introuvable {full_path}"
         _log_tool("list_files", {"path": path}, result)
@@ -153,10 +192,22 @@ def _list_files(path: str = ".") -> str:
     return result
 
 
+_BLOCKED_CMDS = {"rm", "del", "rd", "format", "shutdown", "reboot", "reg", "regedit",
+                  "del /f", "rmdir", "cipher", "diskpart", "wevtutil", "bcdedit",
+                  "del /s", "rd /s", "rm -rf", "rm -r", "rm -f"}
+
 def _run_command(command: str) -> str:
+    # Block dangerous commands
+    cmd_lower = command.strip().lower()
+    for bad in _BLOCKED_CMDS:
+        if cmd_lower.startswith(bad):
+            return f"Erreur : commande interdite ({bad})"
     try:
+        args = shlex.split(command)
+        if not args:
+            return "Erreur : commande vide"
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=120
+            args, shell=False, capture_output=True, text=True, timeout=120
         )
         out = result.stdout or ""
         if result.stderr:
@@ -170,7 +221,35 @@ def _run_command(command: str) -> str:
     return result_str
 
 
+_SSRF_BLOCKED = {"127.0.0.1", "127.0.0.0", "0.0.0.0", "localhost",
+                 "169.254.169.254", "::1", "metadata.google.internal",
+                 "100.100.100.200", "192.168.", "10.", "172.16.", "172.17.",
+                 "172.18.", "172.19.", "172.20.", "172.21.", "172.22.",
+                 "172.23.", "172.24.", "172.25.", "172.26.", "172.27.",
+                 "172.28.", "172.29.", "172.30.", "172.31."}
+
+def _is_private_url(url: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        host_lower = host.lower()
+        if host_lower in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
+            return True
+        for prefix in _SSRF_BLOCKED:
+            if host_lower.startswith(prefix):
+                return True
+        if host_lower.startswith("file://") or parsed.scheme in ("file", "local"):
+            return True
+        if parsed.scheme in ("file", "dict", "gopher", "ftp"):
+            return True
+    except Exception:
+        pass
+    return False
+
 def _web_fetch(url: str) -> str:
+    if _is_private_url(url):
+        return "Erreur : accès aux ressources internes/réseau local interdit"
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",

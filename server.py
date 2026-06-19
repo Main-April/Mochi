@@ -1,10 +1,12 @@
 import sys
 import os
 import json
+import time
 from pathlib import Path
 from contextlib import asynccontextmanager
+from collections import defaultdict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,11 +32,40 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Mochi Agent")
 
+# Security config
+API_TOKEN = os.environ.get("MOCHI_API_TOKEN", "")
+TRUSTED_ORIGINS = os.environ.get("MOCHI_TRUSTED_ORIGINS", "").split(",") if os.environ.get("MOCHI_TRUSTED_ORIGINS") else ["http://localhost:8000", "http://127.0.0.1:8000"]
+
+# Rate limiting
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT = 30  # requests per minute per IP
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window = _rate_limit_store[client_ip]
+    window[:] = [t for t in window if t > now - 60]
+    if len(window) >= RATE_LIMIT:
+        return JSONResponse(status_code=429, content={"error": "Trop de requêtes"})
+    window.append(now)
+
+    sensitive = {"/chat", "/chat/stream", "/settings", "/mode", "/reset", "/conversation/log"}
+    if API_TOKEN and request.url.path in sensitive:
+        auth = request.headers.get("Authorization", "")
+        token_param = request.query_params.get("token", "")
+        if auth != f"Bearer {API_TOKEN}" and token_param != API_TOKEN:
+            return JSONResponse(status_code=401, content={"error": "Non autorisé"})
+
+    response = await call_next(request)
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=TRUSTED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 FRONTEND = BASE / "frontend"
@@ -205,7 +236,12 @@ async def conversation_log():
 
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
-    p = FRONTEND / path
+    # Prevent path traversal in frontend routes
+    p = (FRONTEND / path).resolve()
+    try:
+        p.relative_to(FRONTEND.resolve())
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "not found"})
     if p.exists() and p.is_file():
         return FileResponse(p)
     index = FRONTEND / "index.html"
@@ -216,4 +252,5 @@ async def serve_frontend(path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    host = os.environ.get("MOCHI_HOST", "127.0.0.1")
+    uvicorn.run("server:app", host=host, port=8000, reload=False)
