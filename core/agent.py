@@ -792,15 +792,17 @@ class Agent:
         pool = self._get_pool()
         loop = asyncio.get_event_loop()
 
-        msgs = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": task},
-        ]
+        # Mettre à jour le système + charger l'historique
+        self.memory.add_system(system_prompt)
+        self.memory.add("user", task)
+        msgs = self.memory.get()
 
         keys = self._all_api_keys() if not ak else [ak]
         models = [model]
         if self._fallback and self._fallback != model:
             models.append(self._fallback)
+
+        full_reply_parts = []
 
         for tool_round in range(6):
             had_tool_call = False
@@ -816,6 +818,7 @@ class Agent:
                         ):
                             if event == "content":
                                 yielded = True
+                                full_reply_parts.append(data)
                                 yield ("content", data)
                             elif event == "tool_calls":
                                 had_tool_call = True
@@ -839,21 +842,31 @@ class Agent:
                                     })
                             elif event == "done":
                                 ok = True
-                                return
                             elif event == "usage":
                                 await self._tu(data)
                             elif event == "error":
                                 if yielded:
-                                    return
+                                    yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                                yield ("error", data)
+                                ok = True
                                 break
-                    except OpenRouterError:
+                    except OpenRouterError as e:
                         if yielded:
-                            return
-                        continue
+                            yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                        yield ("error", str(e))
+                        ok = True
+                        break
                     if not yielded:
                         await asyncio.sleep(2)
-            if not had_tool_call or ok:
+            if ok:
                 break
+            if not had_tool_call:
+                break
+
+        # Sauvegarder en mémoire
+        full_reply = "".join(full_reply_parts).strip()
+        if full_reply:
+            self.memory.add("assistant", full_reply)
 
     async def _gen_docs_stream(self, task: str):
         mc    = self._mc()
@@ -863,34 +876,45 @@ class Agent:
         models = [model]
         if self._fallback and self._fallback != model:
             models.append(self._fallback)
+
+        # Mettre à jour le système + charger l'historique
+        self.memory.add_system(self._system_prompt())
+        self.memory.add("user", task)
+        msgs = self.memory.get()
+
+        full_reply_parts = []
+
         for mk in models:
             for k in keys:
                 yielded = False
                 try:
                     async for event, data in self.client.chat_stream(
-                        [
-                            {"role": "system", "content": self._system_prompt()},
-                            {"role": "user",   "content": task},
-                        ],
-                        mk, max_tokens=2048, api_key=k,
+                        msgs, mk, max_tokens=2048, api_key=k,
                     ):
                         if event == "content":
                             yielded = True
+                            full_reply_parts.append(data)
                             yield ("content", data)
                         elif event == "done":
-                            return
+                            pass
                         elif event == "usage":
                             await self._tu(data)
                         elif event == "error":
                             if yielded:
-                                return
+                                yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                            yield ("error", data)
                             break
-                except OpenRouterError:
+                except OpenRouterError as e:
                     if yielded:
-                        return
-                    continue
+                        yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                    yield ("error", str(e))
+                    break
                 if not yielded:
                     await asyncio.sleep(2)
+
+        full_reply = "".join(full_reply_parts).strip()
+        if full_reply:
+            self.memory.add("assistant", full_reply)
 
     async def _gen_debug_stream(self, task: str):
         mc    = self._mc()
@@ -898,19 +922,20 @@ class Agent:
         mt    = mc.get("max_tokens") or self.config["rate_limits"].get("max_tokens_per_request", 4096)
         ak    = self._api_key()
         tools = self._tools()
-        system_prompt = self._system_prompt()
         pool = self._get_pool()
         loop = asyncio.get_event_loop()
 
-        msgs = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": task},
-        ]
+        # Mettre à jour le système + charger l'historique
+        self.memory.add_system(self._system_prompt())
+        self.memory.add("user", task)
+        msgs = self.memory.get()
 
         keys = self._all_api_keys() if not ak else [ak]
         models = [model]
         if self._fallback and self._fallback != model:
             models.append(self._fallback)
+
+        full_reply_parts = []
 
         for tool_round in range(6):
             had_tool_call = False
@@ -926,6 +951,7 @@ class Agent:
                         ):
                             if event == "content":
                                 yielded = True
+                                full_reply_parts.append(data)
                                 yield ("content", data)
                             elif event == "tool_calls":
                                 had_tool_call = True
@@ -949,21 +975,30 @@ class Agent:
                                     })
                             elif event == "done":
                                 ok = True
-                                return
                             elif event == "usage":
                                 await self._tu(data)
                             elif event == "error":
                                 if yielded:
-                                    return
+                                    yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                                yield ("error", data)
+                                ok = True
                                 break
-                    except OpenRouterError:
+                    except OpenRouterError as e:
                         if yielded:
-                            return
-                        continue
+                            yield ("content", "\n\n_[L\'assistant a été interrompu]_")
+                        yield ("error", str(e))
+                        ok = True
+                        break
                     if not yielded:
                         await asyncio.sleep(2)
-            if not had_tool_call or ok:
+            if ok:
                 break
+            if not had_tool_call:
+                break
+
+        full_reply = "".join(full_reply_parts).strip()
+        if full_reply:
+            self.memory.add("assistant", full_reply)
 
     # ------------------------------------------------------------------
     # Mode management
