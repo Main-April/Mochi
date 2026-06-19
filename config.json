@@ -1,62 +1,74 @@
 {
-    "agent": {
-        "name": "Mochi",
-        "goal": "Assistant IA premium, optimisé et efficient",
-        "personality": "Gentil, intelligent, discret, efficace.",
-        "language": "fr"
+  "agent": {
+    "name": "Mochi",
+    "goal": "Assistant IA premium, optimisé et efficient",
+    "personality": "Gentil, intelligent, discret, efficace.",
+    "language": "fr"
+  },
+  "modes": {
+    "work": {
+      "label": "Working",
+      "description": "code, fichiers, commandes",
+      "model": "cohere/north-mini-code:free",
+      "fallback_models": [
+        "qwen/qwen3-coder:free",
+        "google/gemma-4-31b-it:free",
+        "openai/gpt-oss-120b:free"
+      ],
+      "role": "Assistant programmeur doux et efficace",
+      "tools": true,
+      "max_tokens": 8192,
+      "temperature": 0.4
     },
-
-    "modes": {
-        "work": {
-            "label": "Working",
-            "description": "code, fichiers, commandes",
-            "model": "cohere/north-mini-code:free",
-            "fallback_models": ["qwen/qwen3-coder:free","google/gemma-4-31b-it:free", "openai/gpt-oss-120b:free"],
-            "role": "Assistant programmeur doux et efficace",
-            "tools": true,
-            "max_tokens": 8192,
-            "temperature": 0.4
-        },
-        "docs": {
-            "label": "Documentation",
-            "description": "documentation technique",
-            "model": "google/gemma-4-31b-it:free",
-            "role": "Rédacteur technique clair et gentil, sample-friendly",
-            "tools": false,
-            "max_tokens": 4096,
-            "temperature": 0.3
-        },
-        "debug": {
-            "label": "Debug",
-            "description": "analyse et correction de bugs",
-            "model": "openai/gpt-oss-120b:free",
-            "role": "Expert debugging détaillé",
-            "tools": true,
-            "allowed_tools": ["read_file", "write_file", "list_files"],
-            "max_tokens": 8192,
-            "temperature": 0.2
-        },
-        "creative": {
-            "label": "Creative",
-            "description": "génération créative",
-            "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-            "role": "Assistant créatif imaginatif",
-            "tools": false,
-            "max_tokens": 4096,
-            "temperature": 0.9
-        }
+    "docs": {
+      "label": "Documentation",
+      "description": "documentation technique",
+      "model": "google/gemma-4-31b-it:free",
+      "role": "Rédacteur technique clair et gentil, sample-friendly",
+      "tools": false,
+      "max_tokens": 4096,
+      "temperature": 0.3
     },
-
-    "context": {
-        "project_type": "multi-language",
-        "languages": ["python", "html", "css", "javascript", "java","c"],
-        "max_context_tokens": 128000,
-        "memory_file": "memory.json"
+    "debug": {
+      "label": "Debug",
+      "description": "analyse et correction de bugs",
+      "model": "openai/gpt-oss-120b:free",
+      "role": "Expert debugging détaillé",
+      "tools": true,
+      "allowed_tools": [
+        "read_file",
+        "write_file",
+        "list_files"
+      ],
+      "max_tokens": 8192,
+      "temperature": 0.2
     },
-
-    "rate_limits": {
-        "max_requests_per_minute": 60,
-        "max_tokens_per_request": 2048,
-        "max_retries": 3
+    "creative": {
+      "label": "Creative",
+      "description": "génération créative",
+      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "role": "Assistant créatif imaginatif",
+      "tools": false,
+      "max_tokens": 4096,
+      "temperature": 0.9
     }
+  },
+  "context": {
+    "project_type": "multi-language",
+    "languages": [
+      "python",
+      "html",
+      "css",
+      "javascript",
+      "java",
+      "c"
+    ],
+    "max_context_tokens": 128000,
+    "memory_file": "memory.json"
+  },
+  "rate_limits": {
+    "max_requests_per_minute": 60,
+    "max_tokens_per_request": 2048,
+    "max_retries": 3
+  }
 }

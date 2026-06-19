@@ -49,12 +49,17 @@ def _safe_path(path: str | list) -> Path | list | str:
     return resolved
 
 
-def set_workspace(path: str):
+def get_workspace() -> Path:
+    return WORKSPACE
+
+
+def set_workspace(path: str) -> str | None:
     global WORKSPACE
     p = Path(path).expanduser().resolve()
     if not p.exists():
         return "Erreur: le dossier n'existe pas"
     WORKSPACE = p
+    return None
 
 
 def _log_tool(name: str, args: dict, summary: str, duration_ms: int):

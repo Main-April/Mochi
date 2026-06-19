@@ -19,6 +19,7 @@ from core.agent import Agent, MODE_META
 
 agent: Agent | None = None
 BASE = _ME
+CONFIG_FILE = Path(_ME) / "config.json"
 
 
 @asynccontextmanager
@@ -130,13 +131,21 @@ async def set_mode(body: ModeIn):
 @app.get("/settings")
 async def get_settings():
     mc = agent._mc()
-    from core.tools import WORKSPACE
+    from core.tools import get_workspace
+    # Charger le workspace sauvegardé s'il existe
+    saved_workspace = None
+    try:
+        if CONFIG_FILE.exists():
+            cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            saved_workspace = cfg.get("workspace")
+    except Exception:
+        pass
     return {
         "mode": agent.current_mode,
         "model": mc.get("model", ""),
         "max_tokens": mc.get("max_tokens", 4096),
         "temperature": mc.get("temperature", 0.7),
-        "workspace": str(WORKSPACE),
+        "workspace": saved_workspace or str(get_workspace()),
         "label": MODE_META.get(agent.current_mode, {}).get("label", agent.current_mode),
     }
 
@@ -158,15 +167,27 @@ async def set_settings(body: SettingsIn):
     if body.workspace is not None:
         from core.tools import set_workspace
         set_workspace(body.workspace)
+        # Persist workspace dans config.json
+        try:
+            if CONFIG_FILE.exists():
+                cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            else:
+                cfg = {}
+            cfg["workspace"] = body.workspace
+            CONFIG_FILE.write_text(
+                json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception:
+            pass
     agent.current_mode = old_mode
     agent._invalidate_mc()
-    from core.tools import WORKSPACE
+    from core.tools import get_workspace
     return {
         "mode": target,
         "model": mc.get("model", ""),
         "max_tokens": mc.get("max_tokens", 4096),
         "temperature": mc.get("temperature", 0.7),
-        "workspace": str(WORKSPACE),
+        "workspace": str(get_workspace()),
     }
 
 

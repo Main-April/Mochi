@@ -14,6 +14,7 @@ var errorBar = document.getElementById("errorBar");
 var statusEl = document.getElementById("status");
 var scrollBtn = document.getElementById("scrollBtn");
 var clearBtn = document.getElementById("clearBtn");
+var browseBtn = document.getElementById("browseBtn");
 var conversation = document.getElementById("conversation");
 
 var modeBtns = document.querySelectorAll(".mode-btn");
@@ -917,6 +918,63 @@ closeStatsBtn.addEventListener("click", function() { statsOverlay.classList.add(
 statsOverlay.addEventListener("click", function(e) {
   if (e.target === statsOverlay) statsOverlay.classList.add("hide");
 });
+
+async function browseFolder() {
+  try {
+    // Try pywebview native API (launcher)
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.select_folder) {
+      var folder = await window.pywebview.api.select_folder();
+      if (folder) {
+        document.getElementById("settingsWorkspace").value = folder;
+      }
+      return;
+    }
+    // Try File System Access API (Chromium 86+)
+    if ('showDirectoryPicker' in window) {
+      var handle = await window.showDirectoryPicker();
+      var wsEl = document.getElementById("settingsWorkspace");
+      if ('relativePath' in handle) {
+        wsEl.value = handle.relativePath;
+      } else {
+        // showDirectoryPicker doesn't give full path for security
+        // But we can send the name + let backend resolve it
+        // For now fallback to the file input method
+        fallbackBrowse();
+      }
+      return;
+    }
+    // Fallback: create a hidden file input with webkitdirectory
+    fallbackBrowse();
+  } catch (e) {
+    if (e.name === 'AbortError' || e.name === 'SecurityError') return;
+    fallbackBrowse();
+  }
+}
+
+function fallbackBrowse() {
+  // Create a temporary input[type=file webkitdirectory]
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.setAttribute('webkitdirectory', '');
+  input.setAttribute('directory', '');
+  input.style.display = 'none';
+  input.addEventListener('change', function(e) {
+    var files = e.target.files;
+    if (files && files.length > 0) {
+      var path = files[0].webkitRelativePath;
+      // Extract the root directory name from the first file's path
+      var root = path.split('/')[0];
+      // We don't have the full absolute path in browser :(
+      // The user can still type it manually or use the pywebview bridge
+      document.getElementById("settingsWorkspace").value = root;
+    }
+  });
+  document.body.appendChild(input);
+  input.click();
+  document.body.removeChild(input);
+}
+
+browseBtn.addEventListener("click", browseFolder);
 
 async function loadSettings() {
   try {

@@ -138,7 +138,10 @@
         <hr>
 
         <label for="settingsWorkspace">Répertoire du projet</label>
-        <input type="text" id="settingsWorkspace" spellcheck="false" placeholder="ex: C:\Users\nom\projet">
+        <div class="input-row">
+          <input type="text" id="settingsWorkspace" spellcheck="false" placeholder="ex: C:\Users\nom\projet">
+          <button id="browseBtn" class="browse-btn" title="Parcourir...">Parcourir</button>
+        </div>
 
         <div class="modal-actions">
           <button id="cancelBtn" class="modal-btn">Annuler</button>

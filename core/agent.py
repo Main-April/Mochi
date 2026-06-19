@@ -394,6 +394,12 @@ class Agent:
         self.config = config
         self.name: str = config["agent"]["name"]
 
+        # Charger le workspace persistant
+        ws = config.get("workspace")
+        if ws:
+            from .tools import set_workspace
+            set_workspace(ws)
+
         ctx = config["context"]
         memory_file = (_PROJECT_ROOT / ctx.get("memory_file", "memory.json")).resolve()
         self.memory = Memory(
