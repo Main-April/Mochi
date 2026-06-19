@@ -1,6 +1,7 @@
 ﻿import subprocess
 import shlex
 import time
+import threading
 import httpx
 from pathlib import Path
 from datetime import datetime
@@ -170,16 +171,22 @@ def _write_file(path: str, content: str) -> dict:
     if isinstance(fp, str):
         return _format_result("write_file", fp, {"path": path, "error": fp})
     full_path: Path = fp
+    old_content = None
+    created = not full_path.exists()
+    if not created:
+        old_content = full_path.read_text(encoding="utf-8")
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(content, encoding="utf-8")
     lines = content.count("\n") + 1 if content else 0
     dur = int((time.monotonic() - t0) * 1000)
-    summary = f"Fichier créé : {path} ({lines} lignes)"
+    summary = f"Fichier {'créé' if created else 'écrit'} : {path} ({lines} lignes)"
     _log_tool("write_file", {"path": path, "content": content}, summary, dur)
     return _format_result("write_file", summary, {
         "path": str(path),
         "lines": lines,
         "content": content,
+        "old_content": old_content,
+        "created": created,
         "duration_ms": dur,
     })
 
@@ -452,6 +459,84 @@ def execute_tool(name: str, arguments: dict) -> dict:
     if not fn:
         return _format_result(name, f"Erreur : outil '{name}' inconnu", {"error": f"outil '{name}' inconnu"})
     try:
-        return fn(**arguments)
+        result = fn(**arguments)
+        if name in ("edit_file", "write_file"):
+            with _HISTORY_LOCK:
+                _TOOL_HISTORY.append({"tool": name, "args": dict(arguments), "result": result})
+                _REDO_STACK.clear()
+        return result
     except Exception as e:
         return _format_result(name, f"Erreur d'execution de {name}: {e}", {"error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Undo / Redo history
+# ---------------------------------------------------------------------------
+
+_TOOL_HISTORY: list[dict] = []
+_REDO_STACK: list[dict] = []
+_HISTORY_LOCK = threading.Lock()
+
+
+def _undo_tool() -> dict:
+    with _HISTORY_LOCK:
+        if not _TOOL_HISTORY:
+            return _format_result("undo", "Rien à annuler.", {"message": "Rien à annuler."})
+        entry = _TOOL_HISTORY.pop()
+    name = entry["tool"]
+    args = entry["args"]
+    result = entry["result"]
+    data = result.get("data", {})
+
+    if name == "edit_file":
+        old_content = data.get("old_content")
+        if old_content is None:
+            return _format_result("undo", "Impossible d'annuler : old_content manquant",
+                                  {"message": "old_content manquant"})
+        reverse = _edit_file(args["path"], args["start_line"], args["end_line"], old_content)
+        with _HISTORY_LOCK:
+            _REDO_STACK.append({"tool": name, "args": dict(args), "result": result})
+        return _format_result("undo",
+                              f"Annulé : édition de {args['path']} (lignes {args['start_line']}-{args['end_line']})",
+                              {"message": f"Édition de {args['path']} annulée", "undo_result": reverse})
+
+    elif name == "write_file":
+        old_content = data.get("old_content")
+        path = args["path"]
+        if old_content is not None:
+            reverse = _write_file(path, old_content)
+            with _HISTORY_LOCK:
+                _REDO_STACK.append({"tool": name, "args": dict(args), "result": result})
+            return _format_result("undo",
+                                  f"Annulé : écriture dans {path} (restauration de l'ancien contenu)",
+                                  {"message": f"Écriture dans {path} annulée", "undo_result": reverse})
+        else:
+            fp = _safe_path(path)
+            if isinstance(fp, str):
+                return _format_result("undo", f"Erreur : {fp}", {"message": fp})
+            if fp.exists():
+                fp.unlink()
+                with _HISTORY_LOCK:
+                    _REDO_STACK.append({"tool": name, "args": dict(args), "result": result})
+                return _format_result("undo",
+                                      f"Annulé : fichier créé {path} supprimé",
+                                      {"message": f"Fichier {path} supprimé"})
+            return _format_result("undo", f"Fichier {path} déjà supprimé", {"message": f"{path} déjà supprimé"})
+
+    return _format_result("undo", f"Annulation non supportée pour {name}",
+                          {"message": f"Pas d'annulation pour {name}"})
+
+
+def _redo_tool() -> dict:
+    with _HISTORY_LOCK:
+        if not _REDO_STACK:
+            return _format_result("redo", "Rien à refaire.", {"message": "Rien à refaire."})
+        entry = _REDO_STACK.pop()
+    name = entry["tool"]
+    args = entry["args"]
+    result = execute_tool(name, args)
+    with _HISTORY_LOCK:
+        _TOOL_HISTORY.append({"tool": name, "args": dict(args), "result": result})
+    return _format_result("redo",
+                          f"Refait : {name} sur {args.get('path', '')}",
+                          {"message": f"Action {name} refaite", "redo_result": result})

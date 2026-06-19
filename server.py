@@ -64,7 +64,7 @@ async def security_middleware(request: Request, call_next):
         return JSONResponse(status_code=429, content={"error": "Trop de requêtes"})
     window.append(now)
 
-    sensitive = {"/chat", "/chat/stream", "/settings", "/mode", "/reset", "/conversation/log"}
+    sensitive = {"/chat", "/chat/stream", "/settings", "/mode", "/reset", "/conversation/log", "/undo", "/redo"}
     if API_TOKEN and request.url.path in sensitive:
         auth = request.headers.get("Authorization", "")
         token_param = request.query_params.get("token", "")
@@ -182,6 +182,20 @@ async def get_stats():
 async def reset():
     agent.clear_memory()
     return {"status": "ok"}
+
+
+@app.post("/undo")
+async def undo():
+    from core.tools import _undo_tool
+    result = _undo_tool()
+    return {"status": "ok", "message": result["summary"], "data": result["data"]}
+
+
+@app.post("/redo")
+async def redo():
+    from core.tools import _redo_tool
+    result = _redo_tool()
+    return {"status": "ok", "message": result["summary"], "data": result["data"]}
 
 
 @app.post("/chat")

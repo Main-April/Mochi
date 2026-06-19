@@ -1101,6 +1101,16 @@ class Agent:
         self.memory.clear()
         self._rebuild()
 
+    def undo(self) -> str:
+        from .tools import _undo_tool
+        result = _undo_tool()
+        return result["summary"]
+
+    def redo(self) -> str:
+        from .tools import _redo_tool
+        result = _redo_tool()
+        return result["summary"]
+
 
 # ---------------------------------------------------------------------------
 # Cosmétique

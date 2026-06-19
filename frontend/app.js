@@ -146,6 +146,8 @@ async function handleCommand(text) {
   if (cmd === "/debug") { switchMode("debug"); return true; }
   if (cmd === "/creative") { switchMode("creative"); return true; }
   if (cmd === "/clear") { clearChat(); return true; }
+  if (cmd === "/undo") { await undoLastAction(); return true; }
+  if (cmd === "/redo") { await redoLastAction(); return true; }
   if (cmd === "/reset") { await resetMemory(); return true; }
   if (cmd === "/help") { showCommands(); return true; }
   return false;
@@ -158,6 +160,28 @@ async function resetMemory() {
     showSuccess("M\u00E9moire r\u00E9initialis\u00E9e.");
   } catch (err) {
     showError("Erreur reset: " + err.message);
+  }
+}
+
+async function undoLastAction() {
+  try {
+    var res = await fetch(getUrl("/undo"), { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    showSuccess(data.message || "Action annul\u00E9e.");
+  } catch (err) {
+    showError("Erreur undo: " + err.message);
+  }
+}
+
+async function redoLastAction() {
+  try {
+    var res = await fetch(getUrl("/redo"), { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    showSuccess(data.message || "Action refaite.");
+  } catch (err) {
+    showError("Erreur redo: " + err.message);
   }
 }
 

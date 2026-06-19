@@ -63,6 +63,8 @@ def help_panel():
     t.add_row("/autodetect", "detection auto du mode on/off")
     t.add_row("/help", "afficher cette aide")
     t.add_row("/forget", "effacer la memoire")
+    t.add_row("/undo", "annuler la derniere action (edit/write)")
+    t.add_row("/redo", "refaire l'action annulee")
     t.add_row("/clear", "nettoyer le terminal")
     t.add_row("/quit", "quitter")
     console.print(Panel(t, border_style="purple", padding=(1, 2)))
@@ -179,6 +181,16 @@ async def main():
             global _autocorrect_on
             _autocorrect_on = not _autocorrect_on
             console.print(f"[{P}]autocorrect embarrassant: {'ON' if _autocorrect_on else 'OFF'}[/]")
+            continue
+
+        if user_input == "/undo":
+            msg = agent.undo()
+            console.print(f"[{P}]{msg}[/]")
+            continue
+
+        if user_input == "/redo":
+            msg = agent.redo()
+            console.print(f"[{P}]{msg}[/]")
             continue
 
         if user_input.startswith("/maxtokens "):
