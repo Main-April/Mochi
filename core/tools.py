@@ -539,9 +539,15 @@ def _redo_tool() -> dict:
         entry = _REDO_STACK.pop()
     name = entry["tool"]
     args = entry["args"]
-    result = execute_tool(name, args)
-    with _HISTORY_LOCK:
-        _TOOL_HISTORY.append({"tool": name, "args": dict(args), "result": result})
-    return _format_result("redo",
-                          f"Refait : {name} sur {args.get('path', '')}",
-                          {"message": f"Action {name} refaite", "redo_result": result})
+    fn = _TOOL_MAP.get(name)
+    if not fn:
+        return _format_result("redo", f"Outil '{name}' inconnu", {"message": f"Outil '{name}' inconnu"})
+    try:
+        result = fn(**args)
+        with _HISTORY_LOCK:
+            _TOOL_HISTORY.append({"tool": name, "args": dict(args), "result": result})
+        return _format_result("redo",
+                              f"Refait : {name} sur {args.get('path', '')}",
+                              {"message": f"Action {name} refaite", "redo_result": result})
+    except Exception as e:
+        return _format_result("redo", f"Erreur de redo: {e}", {"message": str(e)})
