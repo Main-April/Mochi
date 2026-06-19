@@ -1,5 +1,5 @@
 # Mochi Agent 
-![Logo de Mochi](https://raw.githubusercontent.com/Main-April/Mochi/refs/heads/main/logo.ico?token=GHSAT0AAAAAADVNGEUBGEEQDHFFGZQ6XG7S2RVKRFQ)
+![Logo Mochi](https://raw.githubusercontent.com/Main-April/Mochi/refs/heads/main/logo.ico?token=GHSAT0AAAAAADVNGEUBGEEQDHFFGZQ6XG7S2RVKRFQ)
 
 Cet assistant IA vous permet d'interagir avec les modèles OpenRouter que vous voulez. Il vous permet d'écrire du code, de le debugger ou de trouver
 de la documentation. Cet outil ne vous permet donc pas de vibe coder, mais d'avoir un assistant directement intégré pour pouvoir augmenter votre 
