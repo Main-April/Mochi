@@ -1,4 +1,5 @@
 # Mochi Agent 
+![GitHub stars](https://img.shields.io/github/stars/Main-April/Mochi?style=social)
 ## Ne pas laisser les IA prendre le contrôle du code.
 
 ![Logo Mochi](https://raw.githubusercontent.com/Main-April/Mochi/refs/heads/main/logo.ico)
