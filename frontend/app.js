@@ -44,6 +44,27 @@ var lastSettings = {};
 
 var MODE_LABELS = { work: "Work", docs: "Docs", debug: "Debug", creative: "Creative" };
 
+// Tool call tracking
+var toolCalls = {};
+
+var TOOL_ICONS = {
+  edit_file: '\u270F\uFE0F',
+  write_file: '\u2795',
+  read_file: '\uD83D\uDCD6',
+  list_files: '\uD83D\uDCC1',
+  run_command: '\uD83D\uDD27',
+  web_fetch: '\uD83C\uDF10',
+};
+
+var TOOL_LABELS = {
+  edit_file: 'Edit File',
+  write_file: 'Write File',
+  read_file: 'Read File',
+  list_files: 'List Directory',
+  run_command: 'Run Command',
+  web_fetch: 'Web Fetch',
+};
+
 function fmtTime(iso) {
   if (!iso) return "";
   var d = new Date(iso);
@@ -51,6 +72,11 @@ function fmtTime(iso) {
 }
 
 function nowISO() { return new Date().toISOString(); }
+
+function esc(str) {
+  if (typeof str !== 'string') str = String(str);
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function markdownToHtml(text) {
   if (!text) return "";
@@ -67,14 +93,11 @@ function markdownToHtml(text) {
   html = html.replace(/### (.+)/g, "<h3>$1</h3>");
   html = html.replace(/## (.+)/g, "<h2>$1</h2>");
   html = html.replace(/# (.+)/g, "<h1>$1</h1>");
-
-  html = html.replace(/<li><\/li>/g, "");
   html = html.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/gs, function(m) {
     return "<ul>" + m + "</ul>";
   });
-
   html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-
+  html = html.replace(/<li><\/li>/g, "");
   html = html.replace(/\n\n+/g, "<br>");
   html = html.replace(/\n/g, "<br>");
   html = html.replace(/(<br>\s*){3,}/g, "<br><br>");
@@ -132,7 +155,7 @@ async function resetMemory() {
   try {
     var res = await fetch(getUrl("/reset"), { method: "POST" });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    showSuccess("Mémoire réinitialisée.");
+    showSuccess("M\u00E9moire r\u00E9initialis\u00E9e.");
   } catch (err) {
     showError("Erreur reset: " + err.message);
   }
@@ -219,7 +242,7 @@ function addMsg(id, role, content, meta) {
     actions.className = "msg-actions";
     var copyBtn = document.createElement("button");
     copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-    copyBtn.title = "Copier la r\u00e9ponse";
+    copyBtn.title = "Copier la r\u00E9ponse";
     copyBtn.addEventListener("click", function() {
       navigator.clipboard.writeText(content).then(function() {
         copyBtn.classList.add("copied");
@@ -275,7 +298,7 @@ function addTyping(id) {
   wrap.appendChild(dots);
   var shimmer = document.createElement("span");
   shimmer.className = "typing-text";
-  shimmer.textContent = "L\u2019agent r\u00e9fl\u00e9chit\u2026";
+  shimmer.textContent = "L\u2019agent r\u00E9fl\u00E9chit\u2026";
   wrap.appendChild(shimmer);
   bubble.appendChild(wrap);
   div.appendChild(bubble);
@@ -306,6 +329,7 @@ function showError(msg) {
 
 function clearChat() {
   msgs = [];
+  toolCalls = {};
   document.querySelectorAll(".msg").forEach(function(el) { el.remove(); });
   updateEmpty();
   setStatus("ready", currentMode);
@@ -347,56 +371,294 @@ function editUserMsg(userId) {
   input.focus();
 }
 
-async function loadSettings() {
-  try {
-    var res = await fetch(getUrl("/settings"));
-    if (!res.ok) return;
-    var data = await res.json();
-    lastSettings = data;
-    settingsMode.value = data.mode;
-    settingsModel.value = data.model || "";
-    var mt = data.max_tokens || 4096;
-    settingsMaxTokens.value = mt;
-    settingsMaxTokensVal.textContent = mt;
-    var t = data.temperature || 0.7;
-    settingsTemp.value = t;
-    settingsTempVal.textContent = t;
-    var wsEl = document.getElementById("settingsWorkspace");
-    if (wsEl) wsEl.value = data.workspace || "";
-  } catch (e) { /* silent */ }
+// --- Tool card rendering ---
+
+function getToolTitle(name, args) {
+  switch (name) {
+    case "edit_file": return esc(args.path || "");
+    case "write_file": return esc(args.path || "");
+    case "read_file": return esc(typeof args.path === 'string' ? args.path : (args.path || []).join(", "));
+    case "list_files": return esc(args.path || ".");
+    case "run_command": return esc((args.command || "").substring(0, 80)) + ((args.command || "").length > 80 ? "..." : "");
+    case "web_fetch": return esc(args.url || "");
+    default: return "";
+  }
 }
 
-async function saveSettings() {
-  var body = {};
-  var newModel = settingsModel.value.trim();
-  var newMt = parseInt(settingsMaxTokens.value, 10);
-  var newTemp = parseFloat(settingsTemp.value);
-  if (newModel && newModel !== lastSettings.model) body.model = newModel;
-  if (newMt !== lastSettings.max_tokens) body.max_tokens = newMt;
-  if (newTemp !== lastSettings.temperature) body.temperature = newTemp;
-  var wsEl = document.getElementById("settingsWorkspace");
-  if (wsEl) {
-    var ws = wsEl.value.trim();
-    if (ws && ws !== lastSettings.workspace) body.workspace = ws;
+function renderToolCard(name, args, result) {
+  var card = document.createElement("div");
+  card.className = "tool-card";
+
+  var header = document.createElement("div");
+  header.className = "tool-card-header";
+
+  var toggle = document.createElement("span");
+  toggle.className = "tool-card-toggle";
+  toggle.textContent = "\u25BC";
+  header.appendChild(toggle);
+
+  var icon = document.createElement("span");
+  icon.className = "tool-card-icon";
+  icon.textContent = TOOL_ICONS[name] || "\u2699\uFE0F";
+  header.appendChild(icon);
+
+  var label = document.createElement("span");
+  label.className = "tool-card-name";
+  label.textContent = TOOL_LABELS[name] || name;
+  header.appendChild(label);
+
+  var title = document.createElement("span");
+  title.className = "tool-card-title";
+  title.textContent = getToolTitle(name, args);
+  header.appendChild(title);
+
+  var duration = document.createElement("span");
+  duration.className = "tool-card-duration";
+
+  var isError = result && result.data && result.data.error;
+  var durationMs = result && result.data && result.data.duration_ms;
+
+  if (durationMs !== undefined && durationMs !== null) {
+    duration.textContent = durationMs > 1000 ? (durationMs / 1000).toFixed(1) + "s" : durationMs + "ms";
+  } else if (!result) {
+    duration.textContent = "...";
   }
-  body.mode = settingsMode.value;
-  try {
-    var res = await fetch(getUrl("/settings"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    var data = await res.json();
-    lastSettings = data;
-    if (body.mode && body.mode !== currentMode) {
-      currentMode = body.mode;
-      setActiveModeBtn(currentMode);
-      setStatus("ready", currentMode);
+  header.appendChild(duration);
+
+  var statusIcon = document.createElement("span");
+  statusIcon.className = "tool-card-status";
+  if (!result) {
+    statusIcon.innerHTML = '<span class="spinner"></span>';
+  } else if (isError) {
+    statusIcon.innerHTML = '\u2716';
+    statusIcon.style.color = "#ef4444";
+  } else {
+    statusIcon.innerHTML = '\u2714';
+    statusIcon.style.color = "#34d399";
+  }
+  header.appendChild(statusIcon);
+
+  header.addEventListener("click", function() {
+    var expanded = card.classList.toggle("collapsed");
+    toggle.textContent = expanded ? "\u25B6" : "\u25BC";
+  });
+
+  card.appendChild(header);
+
+  var body = document.createElement("div");
+  body.className = "tool-card-body";
+
+  if (result && result.data && result.data.error) {
+    var errBlock = document.createElement("div");
+    errBlock.className = "tool-card-error";
+    errBlock.textContent = result.data.error;
+    body.appendChild(errBlock);
+  } else if (name === "edit_file" && result && result.data) {
+    body.appendChild(renderDiff(result.data));
+  } else if (name === "write_file" && result && result.data) {
+    body.appendChild(renderFileContent(result.data.content || "", true));
+  } else if (name === "read_file" && result && result.data) {
+    if (result.data.files) {
+      result.data.files.forEach(function(f) {
+        var h = document.createElement("div");
+        h.className = "tool-card-subheader";
+        h.textContent = f.path + " (" + f.total_lines + " lines)";
+        body.appendChild(h);
+        body.appendChild(renderFileContent(f.content || "", false));
+      });
+    } else {
+      body.appendChild(renderFileContent(result.data.content || "", false));
     }
-    settingsOverlay.classList.add("hide");
-  } catch (err) {
-    showError("Erreur sauvegarde: " + err.message);
+  } else if (name === "list_files" && result && result.data) {
+    body.appendChild(renderFileTree(result.data.items || []));
+  } else if (name === "run_command" && result && result.data) {
+    body.appendChild(renderCommandOutput(result.data));
+  } else if (name === "web_fetch" && result && result.data) {
+    body.appendChild(renderWebFetch(result.data));
+  } else if (result) {
+    // fallback: show summary
+    var pre = document.createElement("pre");
+    pre.className = "tool-card-fallback";
+    pre.textContent = result.summary || "";
+    body.appendChild(pre);
+  } else {
+    var pre = document.createElement("pre");
+    pre.className = "tool-card-fallback";
+    pre.textContent = "En attente du résultat...";
+    body.appendChild(pre);
   }
+
+  card.appendChild(body);
+  return card;
+}
+
+function renderDiff(data) {
+  var container = document.createElement("div");
+  container.className = "diff-container";
+
+  // Changes summary
+  var summary = document.createElement("div");
+  summary.className = "diff-summary";
+  var adds = (data.diff || []).filter(function(l) { return l.type === "add"; }).length;
+  var dels = (data.diff || []).filter(function(l) { return l.type === "del"; }).length;
+  summary.innerHTML = '<span class="diff-file">' + esc(data.path) + '</span> ' +
+    '<span class="diff-range">L' + data.start_line + '-' + data.end_line + '</span>' +
+    '<span class="diff-stats"><span class="diff-adds">+' + adds + '</span> <span class="diff-dels">-' + dels + '</span></span>';
+  container.appendChild(summary);
+
+  // Diff lines
+  var code = document.createElement("div");
+  code.className = "diff-code";
+  var lineNum = data.start_line || 1;
+  (data.diff || []).forEach(function(line) {
+    var div = document.createElement("div");
+    div.className = "diff-line diff-" + line.type;
+    if (line.type === "hunk") {
+      div.className = "diff-line diff-hunk";
+      div.textContent = line.content;
+      code.appendChild(div);
+      return;
+    }
+    var num = document.createElement("span");
+    num.className = "diff-ln";
+    if (line.type !== "add") {
+      var oldNum = document.createElement("span");
+      oldNum.className = "diff-ln-num";
+      oldNum.textContent = lineNum;
+      num.appendChild(oldNum);
+    }
+    if (line.type === "add") {
+      var newNum = document.createElement("span");
+      newNum.className = "diff-ln-num diff-ln-new";
+      newNum.textContent = lineNum;
+      num.appendChild(newNum);
+    }
+    var cn = document.createElement("span");
+    cn.className = "diff-cn";
+    cn.textContent = line.content || "";
+    div.appendChild(num);
+    div.appendChild(cn);
+    code.appendChild(div);
+    if (line.type !== "del") { lineNum++; }
+  });
+  container.appendChild(code);
+  return container;
+}
+
+function renderFileContent(content, isNew) {
+  var container = document.createElement("div");
+  container.className = "file-container";
+  var lines = content.split("\n");
+  var code = document.createElement("div");
+  code.className = "file-code" + (isNew ? " file-new" : "");
+  lines.forEach(function(line, i) {
+    var div = document.createElement("div");
+    div.className = "file-line";
+    var num = document.createElement("span");
+    num.className = "file-ln";
+    num.textContent = i + 1;
+    div.appendChild(num);
+    var cn = document.createElement("span");
+    cn.className = "file-cn";
+    cn.textContent = line;
+    div.appendChild(cn);
+    code.appendChild(div);
+  });
+  container.appendChild(code);
+  return container;
+}
+
+function renderFileTree(items) {
+  var container = document.createElement("div");
+  container.className = "tree-container";
+  items.forEach(function(item) {
+    var el = document.createElement("div");
+    el.className = "tree-item";
+    var icon = document.createElement("span");
+    icon.className = "tree-icon";
+    icon.textContent = item.type === "dir" ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
+    el.appendChild(icon);
+    var name = document.createElement("span");
+    name.className = "tree-name";
+    name.textContent = item.name;
+    el.appendChild(name);
+    if (item.type === "file") {
+      var size = document.createElement("span");
+      size.className = "tree-size";
+      size.textContent = formatFileSize(item.size);
+      el.appendChild(size);
+    }
+    container.appendChild(el);
+  });
+  return container;
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+}
+
+function renderCommandOutput(data) {
+  var container = document.createElement("div");
+  container.className = "cmd-container";
+
+  var cmdLine = document.createElement("div");
+  cmdLine.className = "cmd-line";
+  cmdLine.innerHTML = '<span class="cmd-prompt">$</span> <span class="cmd-text">' + esc(data.command || "") + '</span>';
+  container.appendChild(cmdLine);
+
+  if (data.stdout) {
+    var pre = document.createElement("pre");
+    pre.className = "cmd-output";
+    pre.textContent = data.stdout;
+    container.appendChild(pre);
+  }
+  if (data.stderr) {
+    var pre = document.createElement("pre");
+    pre.className = "cmd-error";
+    pre.textContent = data.stderr;
+    container.appendChild(pre);
+  }
+  if (!data.stdout && !data.stderr && data.error) {
+    var pre = document.createElement("pre");
+    pre.className = "cmd-error";
+    pre.textContent = data.error;
+    container.appendChild(pre);
+  }
+  if (data.returncode !== undefined && data.returncode !== 0) {
+    var rc = document.createElement("div");
+    rc.className = "cmd-rc";
+    rc.textContent = "Exit code: " + data.returncode;
+    container.appendChild(rc);
+  }
+  return container;
+}
+
+function renderWebFetch(data) {
+  var container = document.createElement("div");
+  container.className = "fetch-container";
+
+  var meta = document.createElement("div");
+  meta.className = "fetch-meta";
+  meta.innerHTML = '<span class="fetch-url">' + esc(data.url || "") + '</span>' +
+    (data.content_length ? '<span class="fetch-size">' + data.content_length + ' chars</span>' : '') +
+    (data.status_code ? '<span class="fetch-status">HTTP ' + data.status_code + '</span>' : '') +
+    (data.truncated ? '<span class="fetch-truncated">(tronqué)</span>' : '');
+  container.appendChild(meta);
+
+  if (data.content) {
+    var pre = document.createElement("pre");
+    pre.className = "fetch-content";
+    pre.textContent = data.content;
+    container.appendChild(pre);
+  } else if (data.error) {
+    var err = document.createElement("pre");
+    err.className = "cmd-error";
+    err.textContent = data.error;
+    container.appendChild(err);
+  }
+  return container;
 }
 
 // --- Conversation log download ---
@@ -435,6 +697,9 @@ form.addEventListener("submit", async function(e) {
   var assistantId = crypto.randomUUID();
   var assistantEl = addTyping(assistantId);
 
+  // Track current tools for this assistant message
+  var currentToolId = null;
+
   try {
     var res = await fetch(getUrl("/chat/stream"), {
       method: "POST",
@@ -466,7 +731,6 @@ form.addEventListener("submit", async function(e) {
           if (ev.type === "content") {
             fullReply += ev.data;
             if (assistantEl) {
-              // update bubble progressively — replace typing with content
               var bubble = assistantEl.querySelector(".bubble");
               if (bubble) {
                 var p = bubble.querySelector("p");
@@ -483,44 +747,28 @@ form.addEventListener("submit", async function(e) {
             showError(ev.data);
             if (assistantEl) assistantEl.remove();
           } else if (ev.type === "tool_call") {
+            // Create tool card
+            currentToolId = crypto.randomUUID();
+            toolCalls[currentToolId] = { name: ev.name, args: ev.args, startTime: performance.now() };
+
             var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
             if (bubble) {
-              var wrap = document.createElement("div");
-              wrap.className = "tool-call";
-              var header = document.createElement("div");
-              header.className = "tool-header";
-              header.innerHTML = '<span class="tool-toggle">\u25B6</span> \uD83D\uDD27 ' + esc(ev.name) + '()';
-              var detail = document.createElement("div");
-              detail.className = "tool-detail hide";
-              detail.textContent = JSON.stringify(ev.args, null, 2);
-              header.addEventListener("click", function() {
-                detail.classList.toggle("hide");
-                header.querySelector(".tool-toggle").textContent = detail.classList.contains("hide") ? "\u25B6" : "\u25BC";
-              });
-              wrap.appendChild(header);
-              wrap.appendChild(detail);
-              bubble.appendChild(wrap);
+              var card = renderToolCard(ev.name, ev.args, null);
+              card.id = "tool-card-" + currentToolId;
+              bubble.appendChild(card);
               scrollToBottom();
             }
           } else if (ev.type === "tool_result") {
-            var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
-            if (bubble) {
-              var wrap = document.createElement("div");
-              wrap.className = "tool-res";
-              var header = document.createElement("div");
-              header.className = "tool-header";
-              header.innerHTML = '<span class="tool-toggle">\u25B6</span> \u2713 ' + esc(ev.name);
-              var detail = document.createElement("div");
-              detail.className = "tool-detail hide";
-              detail.textContent = ev.result || "";
-              header.addEventListener("click", function() {
-                detail.classList.toggle("hide");
-                header.querySelector(".tool-toggle").textContent = detail.classList.contains("hide") ? "\u25B6" : "\u25BC";
-              });
-              wrap.appendChild(header);
-              wrap.appendChild(detail);
-              bubble.appendChild(wrap);
-              scrollToBottom();
+            var toolId = Object.keys(toolCalls).pop();
+            if (toolId) {
+              toolCalls[toolId].endTime = performance.now();
+              var cardEl = document.getElementById("tool-card-" + toolId);
+              if (cardEl) {
+                var newCard = renderToolCard(ev.name, toolCalls[toolId].args, ev.result);
+                newCard.id = "tool-card-" + toolId;
+                cardEl.replaceWith(newCard);
+                scrollToBottom();
+              }
             }
           }
         } catch (e) { /* ignore parse errors */ }
@@ -624,18 +872,13 @@ async function loadStats() {
     var memBar = '<div class="stat-bar"><div class="stat-bar-fill" style="width:' + memPct + '%"></div></div>';
     html += '<div class="stat-card"><span class="stat-label">Contexte max</span><span class="stat-value">' + esc(s.context.max_chars.toLocaleString()) + ' chars</span></div>';
     html += '<div class="stat-card"><span class="stat-label">Contexte utilisé</span><span class="stat-value">' + esc(memPct) + '%' + memBar + '</span></div>';
-    html += '<div class="stat-card"><span class="stat-label">Durée session</span><span class="stat-value">' + esc(s.duration || '—') + '</span></div>';
+    html += '<div class="stat-card"><span class="stat-label">Durée session</span><span class="stat-value">' + esc(s.duration || '\u2014') + '</span></div>';
 
     html += '</div>';
     statsContent.innerHTML = html;
   } catch (err) {
     statsContent.innerHTML = '<p class="stats-error">Erreur: ' + esc(err.message) + '</p>';
   }
-}
-
-function esc(str) {
-  if (typeof str !== 'string') str = String(str);
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 statsBtn.addEventListener("click", function() {
@@ -650,6 +893,58 @@ closeStatsBtn.addEventListener("click", function() { statsOverlay.classList.add(
 statsOverlay.addEventListener("click", function(e) {
   if (e.target === statsOverlay) statsOverlay.classList.add("hide");
 });
+
+async function loadSettings() {
+  try {
+    var res = await fetch(getUrl("/settings"));
+    if (!res.ok) return;
+    var data = await res.json();
+    lastSettings = data;
+    settingsMode.value = data.mode;
+    settingsModel.value = data.model || "";
+    var mt = data.max_tokens || 4096;
+    settingsMaxTokens.value = mt;
+    settingsMaxTokensVal.textContent = mt;
+    var t = data.temperature || 0.7;
+    settingsTemp.value = t;
+    settingsTempVal.textContent = t;
+    var wsEl = document.getElementById("settingsWorkspace");
+    if (wsEl) wsEl.value = data.workspace || "";
+  } catch (e) { /* silent */ }
+}
+
+async function saveSettings() {
+  var body = {};
+  var newModel = settingsModel.value.trim();
+  var newMt = parseInt(settingsMaxTokens.value, 10);
+  var newTemp = parseFloat(settingsTemp.value);
+  if (newModel && newModel !== lastSettings.model) body.model = newModel;
+  if (newMt !== lastSettings.max_tokens) body.max_tokens = newMt;
+  if (newTemp !== lastSettings.temperature) body.temperature = newTemp;
+  var wsEl = document.getElementById("settingsWorkspace");
+  if (wsEl) {
+    var ws = wsEl.value.trim();
+    if (ws && ws !== lastSettings.workspace) body.workspace = ws;
+  }
+  body.mode = settingsMode.value;
+  try {
+    var res = await fetch(getUrl("/settings"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    lastSettings = data;
+    if (body.mode && body.mode !== currentMode) {
+      currentMode = body.mode;
+      setActiveModeBtn(currentMode);
+      setStatus("ready", currentMode);
+    }
+    settingsOverlay.classList.add("hide");
+  } catch (err) {
+    showError("Erreur sauvegarde: " + err.message);
+  }
+}
 
 updateEmpty();
 setStatus("ready", "work");

@@ -820,7 +820,7 @@ class Agent:
                                     result = await loop.run_in_executor(
                                         pool, execute_tool, name, args
                                     )
-                                    yield ("tool_result", (name, str(result)[:500]))
+                                    yield ("tool_result", (name, result))
                                     msgs.append({
                                         "role": "assistant",
                                         "content": "",
@@ -829,7 +829,7 @@ class Agent:
                                     msgs.append({
                                         "role": "tool",
                                         "tool_call_id": tc["id"],
-                                        "content": str(result)[:2000],
+                                        "content": result["summary"][:2000],
                                     })
                             elif event == "done":
                                 ok = True
@@ -930,7 +930,7 @@ class Agent:
                                     result = await loop.run_in_executor(
                                         pool, execute_tool, name, args
                                     )
-                                    yield ("tool_result", (name, str(result)[:500]))
+                                    yield ("tool_result", (name, result))
                                     msgs.append({
                                         "role": "assistant",
                                         "content": "",
@@ -939,7 +939,7 @@ class Agent:
                                     msgs.append({
                                         "role": "tool",
                                         "tool_call_id": tc["id"],
-                                        "content": str(result)[:2000],
+                                        "content": result["summary"][:2000],
                                     })
                             elif event == "done":
                                 ok = True
