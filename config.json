@@ -1,7 +1,7 @@
 {
     "agent": {
         "name": "Mochi",
-        "goal": "Assistant IA premium, optimisé et efficient",
+        "goal": "Assistant IA premium, optimisé et entrepreneur.",
         "personality": "Gentil, intelligent, discret, efficace.",
         "language": "fr"
     },
@@ -68,8 +68,8 @@
     },
     "rate_limits": {
         "max_requests_per_minute": 60,
-        "max_tokens_per_request": 2048,
+        "max_tokens_per_request": 8192,
         "max_retries": 3
     },
-    "workspace": "C:\\Users\\maximeserenfauconnie\\Downloads\\.mochi"
+    "workspace": ".mochi"
 }
