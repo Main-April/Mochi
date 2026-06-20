@@ -377,6 +377,7 @@ class Memory:
 # ---------------------------------------------------------------------------
 
 _INJECTION_PATTERNS = [
+    # English
     r"ignore\s+(all\s+)?(previous\s+)?(instructions|directives|commands|prompts?)",
     r"forget\s+(all\s+)?(previous\s+)?(instructions|directives|commands|prompts?)",
     r"you\s+are\s+(now|not\s+an?\s+(ai|assistant|bot))",
@@ -392,6 +393,17 @@ _INJECTION_PATTERNS = [
     r"from\s+now\s+on.*?(ignore|forget|act|you\s+are)",
     r"you\s+have\s+been\s+(prompted|programmed|told)",
     r"do\s+anything\s+now",
+    # Français
+    r"ignore\s+(tes|toutes?|tous|ces|mes|les)\s*(les\s+)?(instructions|consignes|directives|commandes)",
+    r"oublie\s+(toutes?\s+)?(les\s+)?(instructions|consignes|directives|commandes)",
+    r"répète\s+(ton|le|ta|la)\s+(prompt|message|instruction|système)",
+    r"affiche\s+(tes\s+|ton\s+|le\s+|ta\s+|la\s+)?(instructions?|prompt|message).*",
+    r"montre\s+(ton|le|ta|la)\s+(prompt|instruction|message|système)",
+    r"imprime\s+(ton|le)\s+(prompt|instructions|message)",
+    r"prompt\s+(système|system)",
+    r"message\s+système",
+    r"tu\s+es\s+(maintenant|désormais|plus\s+un\s+assistant|devenu)",
+    r"\bdan\b",
 ]
 
 # ---------------------------------------------------------------------------
