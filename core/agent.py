@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import asyncio
 import time
 from pathlib import Path
@@ -94,9 +95,13 @@ class OpenRouter:
                 except httpx.HTTPStatusError as e:
                     c = e.response.status_code
                     if c == 402:
-                        raise OpenRouterError("Crédits insuffisants")
+                        raise OpenRouterError("Crédits insuffisants (402). Recharge ton compte OpenRouter.")
                     if c == 401:
-                        raise OpenRouterError("Clé API invalide")
+                        # 401 peut signifier : clé invalide OU modèle non accessible sur ce tier
+                        body = e.response.text[:300]
+                        if "not found" in body.lower() or "model" in body.lower():
+                            raise OpenRouterError(f"Modèle non accessible (401): {body}")
+                        raise OpenRouterError(f"Clé API invalide (401): {body}")
                     if c >= 500 and attempt < self.max_retries - 1:
                         last_err = e
                         await asyncio.sleep(0.5 * (attempt + 1))
@@ -625,19 +630,32 @@ class Agent:
         try:
             if path.exists():
                 content = path.read_text(encoding="utf-8").strip()
-                print(f"\n\u250c\u2500[{self.name}] \u001b[36m[SYSTEM PROMPT]\u001b[0m  chargé depuis {path}")
-                print(f"\u2514\u2500\u2500 {len(content)} caractères")
+                try:
+                    print(f"\n[{self.name}][SYSTEM PROMPT] charge depuis {path} ({len(content)} chars)")
+                except Exception:
+                    pass
                 return content
         except OSError:
             pass
         return ""
 
     def _system_prompt(self) -> str:
-        base = self._load_system_prompt_base()
-        mc = self._mc()
-        mode_label = self.current_mode.capitalize()
-        tools_status = "activés: edit_file, write_file, read_file, list_files, run_command, web_fetch" if mc.get("tools") else "désactivés"
-        return base.replace("{name}", self.name).replace("{mode}", mode_label).replace("{tools}", tools_status)
+        # Cache le résultat pour éviter de relire le disque à chaque appel d'étape
+        if not hasattr(self, "_sp_cache") or self._sp_cache_mode != self.current_mode:
+            base = self._load_system_prompt_base()
+            mc = self._mc()
+            mode_label = self.current_mode.capitalize()
+            tools_status = "activés: edit_file, write_file, read_file, list_files, run_command, web_fetch" if mc.get("tools") else "désactivés"
+            self._sp_cache = base.replace("{name}", self.name).replace("{mode}", mode_label).replace("{tools}", tools_status)
+            self._sp_cache_mode = self.current_mode
+        return self._sp_cache
+
+    def _invalidate_sp_cache(self):
+        """Invalide le cache du system prompt (à appeler lors d'un changement de mode)."""
+        if hasattr(self, "_sp_cache"):
+            del self._sp_cache
+        if hasattr(self, "_sp_cache_mode"):
+            del self._sp_cache_mode
 
     def _plan_prompt(self) -> str:
         if self.current_mode == "docs":
@@ -773,19 +791,24 @@ class Agent:
     async def _gen_focus_stream(self, task: str):
         """
         Mode Focus — Pipeline multi-modèles autonome :
-        1. Planner décompose la tâche en étapes JSON
-        2. Chaque étape est exécutée par le sous-modèle spécialisé
-        3. Le contexte accumulé est passé à chaque étape
+        1. Planner décompose la tâche en étapes JSON (sans _clean_response)
+        2. Chaque étape est exécutée par le sous-modèle spécialisé approprié
+        3. Un contexte compressé des étapes précédentes est injecté (pas le texte streamed brut)
         4. Les appels d'outils sont streamés en temps réel
+
+        Corrections v2 :
+        - _focus_plan utilise raw=True → pas de corruption du JSON par le parser
+        - system_prompt mis en cache → pas de relecture disque à chaque étape
+        - contexte inter-étapes = résumés compressés, pas le texte streamed (évite la répétition)
+        - memory ne reçoit la tâche user qu'une seule fois, en fin de pipeline
         """
         mc    = self._mc()
         tools = self._tools()
         pool  = self._get_pool()
         loop  = asyncio.get_event_loop()
         keys  = self._all_api_keys()
-
-        self.memory.add_system(self._system_prompt())
-        self.memory.add("user", task)
+        # On cache le system prompt une seule fois pour tout le pipeline
+        base_sp = self._system_prompt()
 
         full_reply_parts: list[str] = []
 
@@ -800,57 +823,78 @@ class Agent:
 
         yield ("focus_plan", {"steps": steps, "total": len(steps)})
 
-        context_parts: list[str] = []
+        # Sauvegarder le plan dans l'historique Focus
+        try:
+            self._save_focus_run(task, steps)
+        except Exception:
+            pass  # non bloquant
+
+        # Contexte inter-étapes : liste de résumés courts (pas le texte streamed complet)
+        step_summaries: dict[int, str] = {}   # step_id → résumé court
         completed_steps: list[int] = []
 
         # ── Phase 2 : Exécution des étapes ───────────────────────────────
-        for step in steps:
-            step_id   = step.get("id", "?")
-            title     = step.get("title", f"Étape {step_id}")
+        # On trie les étapes par id pour garantir l'ordre séquentiel correct
+        steps_sorted = sorted(steps, key=lambda s: s.get("id", 0))
+
+        for step in steps_sorted:
+            step_id    = step.get("id", "?")
+            title      = step.get("title", f"Étape {step_id}")
             specialist = step.get("specialist", "coder")
-            depends   = step.get("depends_on", [])
+            depends    = [d for d in step.get("depends_on", []) if isinstance(d, int)]
 
-            # Vérifier les dépendances
+            # Vérifier les dépendances — on signale mais on n'arrête jamais l'exécution
             missing = [d for d in depends if d not in completed_steps]
-            if missing:
-                yield ("focus_phase", {
-                    "phase": "waiting",
-                    "step_id": step_id,
-                    "message": f"En attente des étapes: {missing}"
-                })
-                continue
-
+            msg_suffix = f" (dépendances en cours: {missing})" if missing else ""
             yield ("focus_phase", {
                 "phase": "executing",
                 "step_id": step_id,
                 "specialist": specialist,
                 "title": title,
-                "message": f"[{specialist.upper()}] {title}",
+                "message": f"[{specialist.upper()}] {title}{msg_suffix}",
             })
 
-            context_str = "\n\n".join(context_parts[-3:]) if context_parts else ""
+            # Construire le contexte : résumés compressés des étapes déjà complètes
+            # On utilise un index {id: step} pour accéder aux titres sans risque d'IndexError
+            steps_by_id = {s.get("id"): s for s in steps_sorted}
+            ctx_lines: list[str] = []
+            for dep_id in depends:
+                if dep_id in step_summaries:
+                    dep_title = steps_by_id.get(dep_id, {}).get("title", str(dep_id))
+                    ctx_lines.append(f"Étape {dep_id} ({dep_title}) : {step_summaries[dep_id]}")
+            for sid in completed_steps[-2:]:
+                if sid not in depends and sid in step_summaries:
+                    sid_title = steps_by_id.get(sid, {}).get("title", str(sid))
+                    ctx_lines.append(f"Étape {sid} ({sid_title}) : {step_summaries[sid]}")
+            context_str = "\n".join(ctx_lines) if ctx_lines else ""
 
-            # Sous-modèle courant
             sub_model    = self._focus_model(specialist)
             sub_fallback = self._focus_fallback(specialist)
             sub_temp     = self._focus_temp(specialist)
             sub_mt       = self._focus_mt(specialist)
             sub_role     = self._focus_sub(specialist).get("role", "Expert")
 
-            system = (
-                f"{self._system_prompt()}\n\n"
-                f"Tu es le {sub_role.upper()} dans un pipeline de développement autonome.\n\n"
-                f"PROJET GLOBAL : {task}\n\n"
-                f"CONTEXTE :\n{context_str or 'Aucun contexte précédent.'}\n\n"
-                "RÈGLES :\n"
-                "- Exécute UNIQUEMENT ta partie\n"
-                "- Utilise les outils pour lire/écrire/exécuter\n"
-                "- Sois précis et complet\n"
-                "- Termine avec un résumé de ce qui a été fait"
+            # System prompt de l'étape : base + rôle spécialiste, PAS la tâche complète
+            # (la tâche est dans le message user uniquement → pas de duplication)
+            step_system = (
+                f"{base_sp}\n\n"
+                f"RÔLE ACTUEL : {sub_role}.\n"
+                "Tu fais partie d'un pipeline multi-agents. "
+                "Exécute UNIQUEMENT ta partie, ne récapitule pas le projet entier."
             )
+            if context_str:
+                step_system += f"\n\nCONTEXTE DES ÉTAPES PRÉCÉDENTES :\n{context_str}"
+
+            step_user = (
+                f"TÂCHE GLOBALE : {task}\n\n"
+                f"TON TRAVAIL (étape {step_id}/{len(steps)}) : {title}\n"
+                f"{step.get('description', title)}\n\n"
+                "Instructions : utilise les outils disponibles. Termine par un résumé court (2-3 lignes max) de ce que tu as accompli."
+            )
+
             msgs = [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": f"ÉTAPE {step_id}: {title}\n\n{step.get('description', title)}"},
+                {"role": "system", "content": step_system},
+                {"role": "user",   "content": step_user},
             ]
 
             sub_models = [sub_model]
@@ -859,9 +903,8 @@ class Agent:
 
             step_parts: list[str] = []
             asked_question = None
-            step_ok = False
 
-            for tool_round in range(mc.get("max_tool_rounds", 20)):
+            for _tool_round in range(mc.get("max_tool_rounds", 20)):
                 had_tool_call = False
                 round_ok = False
                 for mk in sub_models:
@@ -930,24 +973,25 @@ class Agent:
                     if asked_question:
                         break
                 if round_ok or asked_question:
-                    step_ok = True
                     break
                 if not had_tool_call:
-                    step_ok = True
                     break
 
             if asked_question:
-                # Sauvegarder ce qu'on a et suspendre
                 full_reply = "".join(full_reply_parts).strip()
                 if full_reply:
+                    self.memory.add("user", task)
                     self.memory.add("assistant", full_reply)
                 return
 
-            # Accumuler le contexte de l'étape
-            step_summary = "".join(step_parts).strip()
-            if step_summary:
-                context_parts.append(f"[Étape {step_id} — {title}]\n{step_summary[:1500]}")
-                completed_steps.append(step_id)
+            # Résumé compressé de l'étape pour le contexte des étapes suivantes
+            # On prend seulement les 400 derniers caractères streamed (la conclusion)
+            step_text = "".join(step_parts).strip()
+            if step_text:
+                # Extraire la fin du texte (là où le résumé se trouve)
+                summary_raw = step_text[-600:] if len(step_text) > 600 else step_text
+                step_summaries[step_id] = _compress(summary_raw, max_chars=300)
+            completed_steps.append(step_id)
 
             yield ("focus_step_done", {"step_id": step_id, "specialist": specialist, "title": title})
 
@@ -956,6 +1000,8 @@ class Agent:
 
         full_reply = "".join(full_reply_parts).strip()
         if full_reply:
+            # Sauvegarder une seule fois dans la mémoire (pas à chaque étape)
+            self.memory.add("user", task)
             self.memory.add("assistant", full_reply)
 
     async def resume_from_answer(self, qid: str, answer: str):
@@ -1363,6 +1409,7 @@ class Agent:
             return f"Mode inconnu. Modes disponibles: {', '.join(self.modes.keys())}"
         self.current_mode = mode
         self._invalidate_mc()
+        self._invalidate_sp_cache()
         fallbacks = self._mc().get("fallback_models", [])
         self._fallback = fallbacks[0] if fallbacks else self._mc().get("fallback", "openai/gpt-oss-120b:free")
         self._rebuild()
@@ -1399,8 +1446,14 @@ class Agent:
         msgs: list,
         specialist: str,
         tools: list | None = None,
+        raw: bool = False,
     ) -> tuple[str, dict | None]:
-        """Appelle un sous-modèle Focus avec fallback automatique."""
+        """Appelle un sous-modèle Focus avec fallback automatique.
+
+        Args:
+            raw: si True, retourne le contenu brut sans _clean_response
+                 (nécessaire pour le JSON du plan, le parser sinon corrompt les listes)
+        """
         model    = self._focus_model(specialist)
         fallback = self._focus_fallback(specialist)
         temp     = self._focus_temp(specialist)
@@ -1412,7 +1465,10 @@ class Agent:
 
         last_err: Exception | None = None
         for mk in models:
+            model_failed = False
             for k in keys:
+                if model_failed:
+                    break
                 try:
                     if tools:
                         content, usage = await self.client.chat_with_tools(
@@ -1422,55 +1478,91 @@ class Agent:
                         content, usage, _ = await self.client.chat(
                             msgs, mk, temperature=temp, max_tokens=mt, api_key=k
                         )
-                    return _clean_response(content), usage
+                    return (content if raw else _clean_response(content)), usage
                 except OpenRouterError as e:
                     last_err = e
-                    if "429" in str(e):
+                    err_str = str(e)
+                    if "401" in err_str and ("not found" in err_str.lower() or "modèle" in err_str.lower()):
+                        # Ce modèle n'est pas accessible → essayer le modèle suivant directement
+                        model_failed = True
+                        break
+                    if "429" in err_str:
                         await asyncio.sleep(2)
                     continue
         raise OpenRouterError(f"[Focus/{specialist}] Tous modèles/clés échoués: {last_err}")
 
     async def _focus_plan(self, task: str) -> list[dict]:
-        """Phase 1 : le Planner décompose la tâche en étapes structurées."""
+        """Phase 1 : le Planner décompose la tâche en étapes d'IMPLÉMENTATION.
+
+        Principe clé : le message utilisateur contient déjà les specs/analyse.
+        Le planner NE RELIT PAS les specs — il génère des fichiers/modules à créer.
+        raw=True : pas de _clean_response → JSON intact.
+        """
         system = (
-            f"{self._system_prompt()}\n\n"
-            "Tu es l'ARCHITECTE de ce projet. Ton rôle : décomposer la tâche en étapes claires et exécutables.\n\n"
-            "FORMAT DE RÉPONSE OBLIGATOIRE (JSON uniquement, pas de texte autour) :\n"
-            "[\n"
-            "  {\"id\": 1, \"title\": \"Titre court\", \"description\": \"Ce qu'il faut faire\", \"specialist\": \"coder|stylist|debugger|reviewer|planner\", \"depends_on\": []},\n"
-            "  ...\n"
-            "]\n\n"
-            "Règles :\n"
-            "- Max 12 étapes\n"
-            "- specialist doit être: coder, stylist, debugger, reviewer ou planner\n"
-            "- depends_on = liste d'IDs des étapes dont celle-ci dépend ([] si indépendante)\n"
-            "- Toujours finir par une étape reviewer pour valider l'ensemble\n"
-            "- Réponds UNIQUEMENT avec le JSON, rien d'autre"
+            "Tu es un architecte qui planifie l'IMPLÉMENTATION concrète d'un projet logiciel.\n\n"
+            "CONTEXTE : L'utilisateur t'envoie les specs d'un projet. "
+            "Ces specs sont déjà analysées et complètes. "
+            "Tu n'as PAS à les résumer, les relister, ni faire d'étape d'analyse.\n\n"
+            "TON SEUL RÔLE : produire un plan d'implémentation en JSON.\n"
+            "Chaque étape = un fichier ou module à CRÉER/CODER, pas une description.\n\n"
+            "INTERDITS ABSOLUS (ces étapes seront rejetées) :\n"
+            '- "Définir les exigences", "Lister les fonctionnalités", "Analyser"\n'
+            '- "Concevoir l\'architecture" sans code concret à produire\n'
+            '- "Documenter", "Résumer", "Récapituler"\n'
+            "- Toute étape dont description = répétition des specs de l'utilisateur\n\n"
+            "AUTORISÉ :\n"
+            '- "Créer Main.java et structure MVC", "Implémenter AuthService.java"\n'
+            '- "Créer LoginPanel.java (Swing)", "Implémenter WebSocketClient.java"\n'
+            '- "Écrire ContactDAO.java + test", "Intégrer Java Sound API dans AudioCall.java"\n\n'
+            "RÈGLES JSON :\n"
+            "1. Tableau JSON brut uniquement — pas de markdown, pas de texte autour\n"
+            "2. 4 à 8 étapes maximum\n"
+            "3. specialist ∈ {coder, stylist, debugger, reviewer}\n"
+            "4. La dernière étape = reviewer\n"
+            "5. depends_on = IDs des étapes dont celle-ci dépend ([] si indépendante)\n\n"
+            "FORMAT EXACT :\n"
+            '[{"id":1,"title":"Créer X","description":"Implémenter Y avec Z","specialist":"coder","depends_on":[]},...]'
         )
         msgs = [
             {"role": "system", "content": system},
-            {"role": "user",   "content": f"Tâche à décomposer : {task}"},
+            {"role": "user",   "content": f"Specs du projet :\n\n{task}"},
         ]
-        content, usage = await self._focus_call(msgs, "planner")
+        content, usage = await self._focus_call(msgs, "planner", raw=True)
         await self._tu(usage)
 
-        # Parser le JSON
-        import re
-        raw = content.strip()
-        # Extraire le bloc JSON si entouré de markdown
-        m = re.search(r"```(?:json)?\s*([\s\S]+?)```", raw)
+        raw_text = content.strip()
+        # Extraire le bloc JSON si entouré de markdown (certains modèles l'ajoutent quand même)
+        m = re.search(r"```(?:json)?\s*([\s\S]+?)```", raw_text)
         if m:
-            raw = m.group(1).strip()
+            raw_text = m.group(1).strip()
+        # Trouver le premier [ et le dernier ] pour isoler le tableau
+        start = raw_text.find("[")
+        end   = raw_text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            raw_text = raw_text[start:end+1]
         try:
-            steps = json.loads(raw)
-            if isinstance(steps, list):
-                return steps
+            steps = json.loads(raw_text)
+            if isinstance(steps, list) and steps:
+                # Sanity check : normaliser les champs manquants
+                validated = []
+                for i, s in enumerate(steps):
+                    if not isinstance(s, dict):
+                        continue
+                    validated.append({
+                        "id":          s.get("id", i + 1),
+                        "title":       s.get("title", f"Étape {i+1}"),
+                        "description": s.get("description", s.get("title", "")),
+                        "specialist":  s.get("specialist", "coder") if s.get("specialist") in ("coder","stylist","debugger","reviewer","planner") else "coder",
+                        "depends_on":  s.get("depends_on", []),
+                    })
+                if validated:
+                    return validated
         except (json.JSONDecodeError, ValueError):
             pass
-        # Fallback : étape unique générique
+        # Fallback : plan minimal si le JSON est illisible
         return [
-            {"id": 1, "title": "Implémentation", "description": task, "specialist": "coder", "depends_on": []},
-            {"id": 2, "title": "Revue finale", "description": "Vérifier la qualité et la cohérence", "specialist": "reviewer", "depends_on": [1]},
+            {"id": 1, "title": "Analyse & implémentation", "description": task, "specialist": "coder", "depends_on": []},
+            {"id": 2, "title": "Revue et validation",       "description": "Vérifier la qualité, la cohérence et corriger les problèmes.", "specialist": "reviewer", "depends_on": [1]},
         ]
 
     async def _focus_execute_step(
@@ -1521,6 +1613,47 @@ class Agent:
     # ------------------------------------------------------------------
     # Session management
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Focus history
+    # ------------------------------------------------------------------
+
+    def _focus_history_path(self) -> Path:
+        return _PROJECT_ROOT / "focus_history.json"
+
+    def _load_focus_history(self) -> list[dict]:
+        p = self._focus_history_path()
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return []
+
+    def _save_focus_run(self, task: str, steps: list[dict]) -> str:
+        """Sauvegarde un run Focus dans l'historique. Retourne l'ID du run."""
+        history = self._load_focus_history()
+        run_id = f"focus_{int(time.time())}_{len(history)}"
+        history.insert(0, {
+            "id":      run_id,
+            "task":    task[:200],
+            "steps":   steps,
+            "ts":      datetime.now().isoformat(),
+            "n_steps": len(steps),
+        })
+        # Garder max 50 runs
+        history = history[:50]
+        self._focus_history_path().write_text(
+            json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return run_id
+
+    def get_focus_history(self) -> list[dict]:
+        return self._load_focus_history()
+
+    async def plan_only(self, task: str) -> list[dict]:
+        """Génère le plan Focus sans exécuter les étapes."""
+        return await self._focus_plan(task)
 
     def save_session(self, name: str) -> str:
         p = _PROJECT_ROOT / "sessions" / f"{name}.json"

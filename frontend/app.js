@@ -43,7 +43,132 @@ var msgs = [];
 var currentMode = "work";
 var lastSettings = {};
 
-var MODE_LABELS = { work: "Work", docs: "Docs", debug: "Debug", creative: "Creative" };
+var MODE_LABELS = { work: "Work", docs: "Docs", debug: "Debug", creative: "Creative", focus: "Focus" };
+
+// ── Focus pipeline state ──────────────────────────────────────────────
+var focusPanel         = document.getElementById("focusPanel");
+var focusPipelineSteps = document.getElementById("focusPipelineSteps");
+var focusPhaseBadge    = document.getElementById("focusPhaseBadge");
+
+var FOCUS_SPECIALIST_ICONS = {
+  planner:  '<i class="fa-solid fa-sitemap"></i>',
+  coder:    '<i class="fa-solid fa-code"></i>',
+  debugger: '<i class="fa-solid fa-bug"></i>',
+  stylist:  '<i class="fa-solid fa-palette"></i>',
+  reviewer: '<i class="fa-solid fa-magnifying-glass-chart"></i>',
+};
+var FOCUS_SPECIALIST_LABELS = {
+  planner:  "Architecte",
+  coder:    "Développeur",
+  debugger: "Debugger",
+  stylist:  "Designer",
+  reviewer: "Reviewer",
+};
+var FOCUS_PHASE_LABELS = {
+  planning:  "Planification",
+  executing: "Exécution",
+  waiting:   "En attente",
+  done:      "Terminé",
+};
+
+function focusShowPanel() { if (focusPanel) focusPanel.classList.remove("hide"); }
+function focusHidePanel() { if (focusPanel) focusPanel.classList.add("hide"); }
+function focusClearPanel() {
+  if (focusPipelineSteps) focusPipelineSteps.innerHTML = "";
+  if (focusPhaseBadge) { focusPhaseBadge.textContent = "En attente"; focusPhaseBadge.className = "focus-phase-badge"; }
+}
+
+function focusSetPhase(phase, message) {
+  if (!focusPhaseBadge) return;
+  focusPhaseBadge.textContent = FOCUS_PHASE_LABELS[phase] || phase;
+  focusPhaseBadge.className = "focus-phase-badge focus-phase-" + phase;
+}
+
+function focusBuildPlan(steps) {
+  if (!focusPipelineSteps) return;
+  focusPipelineSteps.innerHTML = "";
+  steps.forEach(function(step) {
+    var el = document.createElement("div");
+    el.className = "focus-step";
+    el.id = "focus-step-" + step.id;
+    var specialist = step.specialist || "coder";
+    el.innerHTML =
+      '<span class="focus-step-icon">' + (FOCUS_SPECIALIST_ICONS[specialist] || '<i class="fa-solid fa-gear"></i>') + '</span>' +
+      '<span class="focus-step-label">' + esc(FOCUS_SPECIALIST_LABELS[specialist] || specialist) + '</span>' +
+      '<span class="focus-step-title">' + esc(step.title || "") + '</span>' +
+      '<span class="focus-step-status focus-step-pending"><i class="fa-regular fa-clock"></i></span>';
+    focusPipelineSteps.appendChild(el);
+  });
+}
+
+function focusMarkStepActive(stepId, specialist) {
+  var el = document.getElementById("focus-step-" + stepId);
+  if (!el) return;
+  el.classList.add("focus-step-active");
+  var statusEl = el.querySelector(".focus-step-status");
+  if (statusEl) { statusEl.className = "focus-step-status focus-step-running"; statusEl.innerHTML = '<span class="spinner"></span>'; }
+}
+
+function focusMarkStepDone(stepId) {
+  var el = document.getElementById("focus-step-" + stepId);
+  if (!el) return;
+  el.classList.remove("focus-step-active");
+  el.classList.add("focus-step-done");
+  var statusEl = el.querySelector(".focus-step-status");
+  if (statusEl) { statusEl.className = "focus-step-status"; statusEl.innerHTML = '<i class="fa-solid fa-check" style="color:#34d399"></i>'; }
+  focusHideSpecialist();
+}
+
+var focusSpecialistBadge = document.getElementById("focusSpecialistBadge");
+
+function focusShowSpecialist(specialist) {
+  if (!focusSpecialistBadge) return;
+  var label = FOCUS_SPECIALIST_LABELS[specialist] || specialist;
+  var icon  = FOCUS_SPECIALIST_ICONS[specialist]  || '<i class="fa-solid fa-gear"></i>';
+  focusSpecialistBadge.innerHTML = icon + " " + esc(label);
+  focusSpecialistBadge.classList.remove("hide");
+}
+
+function focusHideSpecialist() {
+  if (focusSpecialistBadge) focusSpecialistBadge.classList.add("hide");
+}
+
+// Aperçu du plan Focus (/plan command)
+async function previewFocusPlan(task) {
+  if (!task.trim()) { showError("Spécifie une tâche après /plan."); return; }
+  var assistantId = crypto.randomUUID();
+  var assistantEl = addTyping(assistantId);
+  try {
+    var res = await fetch(getUrl("/focus/plan"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task: task }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    removeMsg(assistantId);
+    var steps = data.steps || [];
+    var lines = ["**Plan Focus prévisualisé** (" + steps.length + " étapes)\n"];
+    steps.forEach(function(s) {
+      var sp = FOCUS_SPECIALIST_LABELS[s.specialist] || s.specialist;
+      lines.push("**" + s.id + ". " + s.title + "** `" + sp + "`\n" + (s.description || ""));
+    });
+    var content = lines.join("\n\n");
+    var aid = crypto.randomUUID();
+    var ts  = nowISO();
+    msgs.push({ id: aid, role: "assistant", content: content, ts: ts });
+    addMsg(aid, "assistant", content, { ts: ts });
+    updateEmpty();
+    // Afficher aussi le pipeline sans l'exécuter
+    focusShowPanel();
+    focusClearPanel();
+    focusBuildPlan(steps);
+    focusSetPhase("planning", "");
+  } catch (err) {
+    if (assistantEl) removeMsg(assistantId);
+    showError("Erreur /plan : " + err.message);
+  }
+}
 
 // Tool call tracking
 var toolCalls = {};
@@ -174,6 +299,18 @@ async function startSseStream(url, body, assistantEl, assistantId, fullReplyRef)
           }
         } else if (ev.type === "question") {
           return ev.data;
+        } else if (ev.type === "focus_phase") {
+          focusSetPhase(ev.data.phase, ev.data.message);
+          if (ev.data.phase === "planning") { focusShowPanel(); focusClearPanel(); }
+          if (ev.data.phase === "done") { focusSetPhase("done"); focusHideSpecialist(); }
+          if (ev.data.phase === "executing" && ev.data.step_id) {
+            focusMarkStepActive(ev.data.step_id, ev.data.specialist);
+            focusShowSpecialist(ev.data.specialist);
+          }
+        } else if (ev.type === "focus_plan") {
+          focusBuildPlan(ev.data.steps || []);
+        } else if (ev.type === "focus_step_done") {
+          focusMarkStepDone(ev.data.step_id);
         }
       } catch (e) { /* ignore parse errors */ }
     }
@@ -262,6 +399,12 @@ async function switchMode(mode) {
     currentMode = data.mode;
     setActiveModeBtn(currentMode);
     setStatus("ready", currentMode);
+    // Gérer le panel Focus
+    if (currentMode !== "focus") {
+      focusHidePanel();
+      focusClearPanel();
+      focusHideSpecialist();
+    }
   } catch (err) {
     showError("Impossible de changer de mode (" + err.message + ")");
   }
@@ -279,6 +422,8 @@ async function handleCommand(text) {
   if (cmd === "/docs") { switchMode("docs"); return true; }
   if (cmd === "/debug") { switchMode("debug"); return true; }
   if (cmd === "/creative") { switchMode("creative"); return true; }
+  if (cmd === "/focus") { switchMode("focus"); return true; }
+  if (cmd === "/plan") { await previewFocusPlan(arg); return true; }
   if (cmd === "/clear") { clearChat(); return true; }
   if (cmd === "/undo") { await undoLastAction(); return true; }
   if (cmd === "/redo") { await redoLastAction(); return true; }
@@ -492,6 +637,8 @@ function clearChat() {
   updateEmpty();
   setStatus("ready", currentMode);
   errorBar.classList.add("hide");
+  focusClearPanel();
+  if (currentMode !== "focus") focusHidePanel();
 }
 
 function editPrompt(assistantId) {

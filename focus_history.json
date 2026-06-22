@@ -1,0 +1,154 @@
+[
+  {
+    "id": "focus_1782137187_1",
+    "task": "Crée une app java complète qui recrée Skype, avec interface, sans javafx (utilise jframe). Gère donc les flux caméras, micros, etc ...",
+    "steps": [
+      {
+        "id": 1,
+        "title": "Créer MainFrame.java et Layout",
+        "description": "Implémenter la fenêtre principale JFrame avec panels pour la liste de contacts et la zone d'appel",
+        "specialist": "coder",
+        "depends_on": []
+      },
+      {
+        "id": 2,
+        "title": "Implémenter NetworkManager.java",
+        "description": "Coder la gestion des sockets TCP/UDP pour la signalisation et l'échange de flux entre clients",
+        "specialist": "coder",
+        "depends_on": [
+          1
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Créer AudioHandler.java",
+        "description": "Implémenter la capture et la lecture du flux audio via Java Sound API (TargetDataLine/SourceDataLine)",
+        "specialist": "coder",
+        "depends_on": [
+          2
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implémenter VideoStreamPanel.java",
+        "description": "Créer un composant Swing pour l'affichage du flux vidéo via une bibliothèque de capture (ex: Sarxos Webcam API)",
+        "specialist": "coder",
+        "depends_on": [
+          1,
+          2
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Créer ChatService.java",
+        "description": "Implémenter l'envoi et la réception de messages texte en temps réel via sockets",
+        "specialist": "coder",
+        "depends_on": [
+          2
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Intégrer UIStyling.java",
+        "description": "Appliquer le look-and-feel et le design des composants Swing pour imiter l'interface Skype",
+        "specialist": "stylist",
+        "depends_on": [
+          1
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Optimiser FluxMedia.java",
+        "description": "Déboguer la latence audio/vidéo et gérer les buffers de transmission",
+        "specialist": "debugger",
+        "depends_on": [
+          3,
+          4
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Valider l'intégration globale",
+        "description": "Vérifier la stabilité des appels et la synchronisation audio-vidéo",
+        "specialist": "reviewer",
+        "depends_on": [
+          5,
+          6,
+          7
+        ]
+      }
+    ],
+    "ts": "2026-06-22T16:06:27.362659",
+    "n_steps": 8
+  },
+  {
+    "id": "focus_1782136704_0",
+    "task": "Crée une app java qui recrée skype, en implémentant une interface, sans utiliser Javafx, juste Jframe",
+    "steps": [
+      {
+        "id": 1,
+        "title": "Définir les exigences fonctionnelles",
+        "description": "Lister les fonctionnalités essentielles (authentification, contacts, messagerie texte, appels audio, partage d'écran) et les contraintes techniques (JFrame uniquement, compatibilité multiplateforme)",
+        "specialist": "planner",
+        "depends_on": []
+      },
+      {
+        "id": 2,
+        "title": "Concevoir l'architecture de l'application",
+        "description": "Dessiner les modules (UI, réseau, protocole, gestion des médias) et leurs interfaces, choisir les bibliothèques tierces (ex. JLayer pour audio, JCodec pour vidéo)",
+        "specialist": "planner",
+        "depends_on": [
+          1
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Implémenter l'interface graphique",
+        "description": "Créer les fenêtres JFrame, panneaux, menus et composants Swing pour la liste de contacts, le chat et les contrôles d'appel, en respectant le design défini",
+        "specialist": "stylist",
+        "depends_on": [
+          2
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Développer le moteur de communication réseau",
+        "description": "Programmer le protocole client‑serveur (socket TCP/UDP), gérer l'authentification, la synchronisation des contacts et l'échange de messages texte",
+        "specialist": "coder",
+        "depends_on": [
+          2
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Intégrer l'audio/vidéo en temps réel",
+        "description": "Utiliser les bibliothèques sélectionnées pour capturer, encoder, transmettre et décoder le flux audio/vidéo, synchroniser avec le module réseau",
+        "specialist": "coder",
+        "depends_on": [
+          4
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Tester et déboguer l'application",
+        "description": "Écrire des tests unitaires et fonctionnels, vérifier la stabilité des appels, corriger les fuites de ressources et les problèmes d'interface",
+        "specialist": "debugger",
+        "depends_on": [
+          3,
+          5
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Revue finale et validation",
+        "description": "Faire une revue complète du code, de l'UI et des performances, valider que toutes les exigences sont satisfaites et préparer la documentation de livraison",
+        "specialist": "reviewer",
+        "depends_on": [
+          6
+        ]
+      }
+    ],
+    "ts": "2026-06-22T15:58:24.848392",
+    "n_steps": 7
+  }
+]

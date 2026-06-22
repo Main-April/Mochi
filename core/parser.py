@@ -1,6 +1,6 @@
 import re
 
-# Blocs à supprimer : guides superflus, tableaux d'étapes, intros vides
+# Blocs à supprimer : intros superflues uniquement
 _RE_VERBOSE_BLOCKS = re.compile(
     r'(?:'
     r'(?:Voici|Je vois que|Vous avez déjà|Ce que vous pouvez faire maintenant|N\'hésitez pas|Vous pouvez aussi)'
@@ -11,7 +11,6 @@ _RE_VERBOSE_BLOCKS = re.compile(
 
 _RE_TABLE_ROW = re.compile(r'^\s*\|.+\|')
 _RE_TABLE_SEP = re.compile(r'^\s*\|[-:\s]+\|')
-_RE_STEP_NUM = re.compile(r'^\s*\d+[.)]\s+', re.MULTILINE)
 _RE_HEADER_CHECKS = re.compile(
     r'(?:Vérification rapide|Étapes? suivantes?|Pour aller plus loin|Ce que vous pouvez faire)\s*:?\s*\n*',
     re.IGNORECASE,
@@ -19,10 +18,24 @@ _RE_HEADER_CHECKS = re.compile(
 _RE_MULTI_NL = re.compile(r'\n{3,}')
 _RE_TRAIL_SPACE = re.compile(r'[ \t]+$', re.MULTILINE)
 
+# Détection de JSON/code : on ne nettoie pas le contenu dans un bloc de code ou JSON
+_RE_CODE_BLOCK = re.compile(r'```[\s\S]*?```')
+_RE_INLINE_JSON = re.compile(r'^\s*[\[{]')
+
+
+def _looks_like_structured(text: str) -> bool:
+    """Retourne True si le texte ressemble à du JSON ou du code — on ne touche pas aux listes."""
+    stripped = text.strip()
+    return bool(_RE_INLINE_JSON.match(stripped))
+
 
 def clean(text: str, aggressive: bool = True) -> str:
     if not text:
         return text
+
+    # Ne pas nettoyer si c'est du JSON brut
+    if _looks_like_structured(text):
+        return text.strip()
 
     if aggressive:
         text = _RE_VERBOSE_BLOCKS.sub('', text)
@@ -32,8 +45,19 @@ def clean(text: str, aggressive: bool = True) -> str:
     out: list[str] = []
 
     in_table = False
+    in_code_block = False
     for line in lines:
         stripped = line.strip()
+
+        # Respecter les blocs de code : ne rien supprimer dedans
+        if stripped.startswith('```'):
+            in_code_block = not in_code_block
+            out.append(line)
+            continue
+        if in_code_block:
+            out.append(line)
+            continue
+
         if _RE_TABLE_SEP.match(line) or (in_table and _RE_TABLE_ROW.match(line)):
             in_table = True
             continue
@@ -45,8 +69,9 @@ def clean(text: str, aggressive: bool = True) -> str:
             continue
         in_table = False
 
-        if aggressive and _RE_STEP_NUM.match(stripped):
-            continue
+        # NOTE: on ne supprime plus les listes numérotées (1. 2. 3.)
+        # Elles sont utiles dans les réponses et critiques dans le JSON du plan.
+        # L'ancienne ligne était : if aggressive and _RE_STEP_NUM.match(stripped): continue
 
         out.append(line)
 

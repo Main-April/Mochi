@@ -18,6 +18,7 @@
         <div>
           <h1>Mochi</h1>
           <p class="status" id="status"><span class="dot"></span> Work</p>
+          <p class="focus-specialist-badge hide" id="focusSpecialistBadge"></p>
         </div>
       </div>
       <div class="h-right">
@@ -26,6 +27,9 @@
           <button class="mode-btn" data-mode="docs">Docs</button>
           <button class="mode-btn" data-mode="debug">Debug</button>
           <button class="mode-btn" data-mode="creative">Creative</button>
+          <button class="mode-btn mode-btn-focus" data-mode="focus">
+            <span class="focus-dot"></span>Focus
+          </button>
         </div>
         <button id="commandsBtn" class="icon-btn" aria-label="Commandes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
@@ -58,6 +62,16 @@
 
     <div id="errorBar" class="hide"></div>
 
+    <!-- Focus pipeline panel -->
+    <div id="focusPanel" class="focus-panel hide">
+      <div class="focus-panel-header">
+        <span class="focus-panel-icon"><span class="focus-dot"></span></span>
+        <span class="focus-panel-title">Pipeline Focus</span>
+        <span id="focusPhaseBadge" class="focus-phase-badge">En attente</span>
+      </div>
+      <div id="focusPipelineSteps" class="focus-pipeline-steps"></div>
+    </div>
+
     <footer>
       <form id="form">
         <div id="inputWrap">
@@ -67,7 +81,7 @@
           </button>
         </div>
       </form>
-      <p class="footnote"><code>/work</code> <code>/docs</code> <code>/debug</code> <code>/creative</code> <code>/reset</code> <code>/help</code></p>
+      <p class="footnote"><code>/work</code> <code>/docs</code> <code>/debug</code> <code>/creative</code> <code>/focus</code> <code>/plan</code> <code>/reset</code> <code>/help</code></p>
     </footer>
 
     <div id="commandsOverlay" class="hide">
@@ -78,6 +92,8 @@
           <div class="cmd-row"><code>/docs</code><span>Mode Documentation</span></div>
           <div class="cmd-row"><code>/debug</code><span>Mode Debug</span></div>
           <div class="cmd-row"><code>/creative</code><span>Mode Creative</span></div>
+          <div class="cmd-row cmd-focus"><code>/focus</code><span>Mode Focus — pipeline multi-modèles autonome</span></div>
+          <div class="cmd-row cmd-focus"><code>/plan &lt;tâche&gt;</code><span>Prévisualiser le plan Focus sans exécuter</span></div>
           <div class="cmd-row"><code>/reset</code><span>Réinitialiser la mémoire de l'agent</span></div>
           <div class="cmd-row"><code>/clear</code><span>Effacer la conversation</span></div>
           <div class="cmd-row"><code>/help</code><span>Afficher cette aide</span></div>
@@ -119,6 +135,7 @@
           <option value="docs">Docs</option>
           <option value="debug">Debug</option>
           <option value="creative">Creative</option>
+          <option value="focus">Focus</option>
         </select>
 
         <label for="settingsModel">Modèle</label>

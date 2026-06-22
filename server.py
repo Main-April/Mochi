@@ -103,6 +103,10 @@ class AnswerIn(BaseModel):
     answer: str
 
 
+class PlanIn(BaseModel):
+    task: str
+
+
 @app.get("/modes")
 async def get_modes():
     modes = []
@@ -296,6 +300,32 @@ async def answer_question(qid: str, body: AnswerIn):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+@app.post("/focus/plan")
+async def focus_plan(body: PlanIn):
+    """Génère le plan Focus sans exécuter les étapes (preview)."""
+    try:
+        old_mode = agent.current_mode
+        agent.current_mode = "focus"
+        agent._invalidate_mc()
+        try:
+            steps = await agent.plan_only(body.task)
+        finally:
+            agent.current_mode = old_mode
+            agent._invalidate_mc()
+        return {"steps": steps, "total": len(steps)}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/focus/history")
+async def focus_history():
+    """Retourne l'historique des runs Focus."""
+    try:
+        return {"runs": agent.get_focus_history()}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/conversation/log")
