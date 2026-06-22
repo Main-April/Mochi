@@ -257,6 +257,20 @@ footer{flex-shrink:0;padding:0 16px 16px;max-width:672px;margin:0 auto;width:100
 .tree-name{color:var(--fg)}
 .tree-size{margin-left:auto;color:var(--muted-fg);font-size:10px;opacity:.5}
 
+/* ─── Question card (ask_user) ─── */
+.question-card{margin:8px 0;padding:10px 12px;border-radius:8px;border:1px solid rgba(129,140,248,0.1);background:rgba(129,140,248,0.03)}
+.question-text{font-size:14px;font-weight:500;color:var(--fg);margin-bottom:8px;line-height:1.5}
+.question-options{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.question-btn{padding:6px 14px;border-radius:6px;border:1px solid rgba(129,140,248,0.12);background:rgba(129,140,248,0.04);color:#818cf8;cursor:pointer;font-size:12px;font-family:inherit;transition:var(--transition)}
+.question-btn:hover{background:rgba(129,140,248,0.08);border-color:rgba(129,140,248,0.18)}
+.question-btn:disabled{opacity:.35;cursor:default}
+.question-custom{display:flex;gap:6px}
+.question-input{flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--input-bg);color:var(--fg);font-size:12px;outline:none;font-family:inherit;transition:var(--transition)}
+.question-input:focus{border-color:rgba(129,140,248,0.15)}
+.question-send{padding:6px 12px;border-radius:6px;border:none;background:var(--gradient-primary);color:var(--primary-fg);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;transition:var(--transition)}
+.question-send:hover{filter:brightness(1.1)}
+.question-send:disabled{opacity:.25;cursor:default}
+
 /* ─── Web fetch ─── */
 .fetch-container{font-size:12px}
 .fetch-meta{display:flex;align-items:center;gap:8px;padding:5px 10px;background:rgba(24,24,37,0.4);border-radius:6px;margin-bottom:4px;flex-wrap:wrap}

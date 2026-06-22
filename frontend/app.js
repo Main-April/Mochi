@@ -48,6 +48,139 @@ var MODE_LABELS = { work: "Work", docs: "Docs", debug: "Debug", creative: "Creat
 // Tool call tracking
 var toolCalls = {};
 
+// Question handling
+function waitForAnswer(data, assistantEl) {
+  return new Promise(function(resolve) {
+    var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
+    if (!bubble) { resolve(""); return; }
+
+    var indicator = bubble.querySelector(".typing-indicator");
+    if (indicator) indicator.remove();
+
+    var questionDiv = document.createElement("div");
+    questionDiv.className = "question-card";
+
+    var questionText = document.createElement("div");
+    questionText.className = "question-text";
+    questionText.textContent = data.question || "";
+    questionDiv.appendChild(questionText);
+
+    if (data.options && data.options.length > 0) {
+      var optionsDiv = document.createElement("div");
+      optionsDiv.className = "question-options";
+      data.options.forEach(function(opt) {
+        var btn = document.createElement("button");
+        btn.className = "question-btn";
+        btn.textContent = opt;
+        btn.addEventListener("click", function() { disableQuestionButtons(questionDiv); resolve(opt); });
+        optionsDiv.appendChild(btn);
+      });
+      questionDiv.appendChild(optionsDiv);
+    }
+
+    var customDiv = document.createElement("div");
+    customDiv.className = "question-custom";
+    var qInput = document.createElement("input");
+    qInput.type = "text";
+    qInput.placeholder = "Ta réponse personnalisée...";
+    qInput.className = "question-input";
+    var sendBtn = document.createElement("button");
+    sendBtn.className = "question-send";
+    sendBtn.textContent = "Envoyer";
+    sendBtn.addEventListener("click", function() {
+      var val = qInput.value.trim();
+      if (val) { disableQuestionButtons(questionDiv); resolve(val); }
+    });
+    qInput.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") { var val = qInput.value.trim(); if (val) { disableQuestionButtons(questionDiv); resolve(val); } }
+    });
+    customDiv.appendChild(qInput);
+    customDiv.appendChild(sendBtn);
+    questionDiv.appendChild(customDiv);
+
+    bubble.appendChild(questionDiv);
+    scrollToBottom();
+    qInput.focus();
+  });
+}
+
+function disableQuestionButtons(questionDiv) {
+  var btns = questionDiv.querySelectorAll("button");
+  btns.forEach(function(b) { b.disabled = true; });
+}
+
+async function startSseStream(url, body, assistantEl, assistantId, fullReplyRef) {
+  var res = await fetch(getUrl(url), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+
+  var reader = res.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = "";
+  var done = false;
+
+  while (!done) {
+    var result = await reader.read();
+    done = result.done;
+    buffer += decoder.decode(result.value || new Uint8Array(), { stream: !done });
+    var lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.startsWith("data: ")) continue;
+      var raw = line.slice(6).trim();
+      if (raw === "[DONE]") { done = true; break; }
+      try {
+        var ev = JSON.parse(raw);
+        if (ev.type === "content") {
+          fullReplyRef.text += ev.data;
+          if (assistantEl) {
+            var bubble = assistantEl.querySelector(".bubble");
+            if (bubble) {
+              var p = bubble.querySelector("p");
+              if (!p) { bubble.innerHTML = ""; p = document.createElement("p"); bubble.appendChild(p); }
+              p.innerHTML = markdownToHtml(fullReplyRef.text);
+              scrollToBottom();
+            }
+          }
+        } else if (ev.type === "error") {
+          showError(ev.data);
+          if (assistantEl) assistantEl.remove();
+        } else if (ev.type === "tool_call") {
+          var toolId = crypto.randomUUID();
+          toolCalls[toolId] = { name: ev.name, args: ev.args, startTime: performance.now() };
+          var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
+          if (bubble) {
+            var card = renderToolCard(ev.name, ev.args, null);
+            card.id = "tool-card-" + toolId;
+            bubble.appendChild(card);
+            scrollToBottom();
+          }
+        } else if (ev.type === "tool_result") {
+          var toolId = Object.keys(toolCalls).pop();
+          if (toolId) {
+            toolCalls[toolId].endTime = performance.now();
+            var cardEl = document.getElementById("tool-card-" + toolId);
+            if (cardEl) {
+              var newCard = renderToolCard(ev.name, toolCalls[toolId].args, ev.result);
+              newCard.id = "tool-card-" + toolId;
+              cardEl.replaceWith(newCard);
+              scrollToBottom();
+            }
+          }
+        } else if (ev.type === "question") {
+          return ev.data;
+        }
+      } catch (e) { /* ignore parse errors */ }
+    }
+  }
+  return null;
+}
+
 var TOOL_ICONS = {
   edit_file: '<i class="fa-solid fa-pen-to-square"></i>',
   write_file: '<i class="fa-solid fa-file-circle-plus"></i>',
@@ -743,89 +876,20 @@ form.addEventListener("submit", async function(e) {
   var assistantId = crypto.randomUUID();
   var assistantEl = addTyping(assistantId);
 
-  // Track current tools for this assistant message
-  var currentToolId = null;
-
   try {
-    var res = await fetch(getUrl("/chat/stream"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
+    var fullReplyRef = { text: "" };
+    var pendingQuestion = await startSseStream("/chat/stream", { message: text }, assistantEl, assistantId, fullReplyRef);
 
-    var reader = res.body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = "";
-    var fullReply = "";
-    var done = false;
-
-    while (!done) {
-      var result = await reader.read();
-      done = result.done;
-      buffer += decoder.decode(result.value || new Uint8Array(), { stream: !done });
-      var lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        if (!line.startsWith("data: ")) continue;
-        var raw = line.slice(6).trim();
-        if (raw === "[DONE]") { done = true; break; }
-        try {
-          var ev = JSON.parse(raw);
-          if (ev.type === "content") {
-            fullReply += ev.data;
-            if (assistantEl) {
-              var bubble = assistantEl.querySelector(".bubble");
-              if (bubble) {
-                var p = bubble.querySelector("p");
-                if (!p) {
-                  bubble.innerHTML = "";
-                  p = document.createElement("p");
-                  bubble.appendChild(p);
-                }
-                p.innerHTML = markdownToHtml(fullReply);
-                scrollToBottom();
-              }
-            }
-          } else if (ev.type === "error") {
-            showError(ev.data);
-            if (assistantEl) assistantEl.remove();
-          } else if (ev.type === "tool_call") {
-            // Create tool card
-            currentToolId = crypto.randomUUID();
-            toolCalls[currentToolId] = { name: ev.name, args: ev.args, startTime: performance.now() };
-
-            var bubble = assistantEl ? assistantEl.querySelector(".bubble") : null;
-            if (bubble) {
-              var card = renderToolCard(ev.name, ev.args, null);
-              card.id = "tool-card-" + currentToolId;
-              bubble.appendChild(card);
-              scrollToBottom();
-            }
-          } else if (ev.type === "tool_result") {
-            var toolId = Object.keys(toolCalls).pop();
-            if (toolId) {
-              toolCalls[toolId].endTime = performance.now();
-              var cardEl = document.getElementById("tool-card-" + toolId);
-              if (cardEl) {
-                var newCard = renderToolCard(ev.name, toolCalls[toolId].args, ev.result);
-                newCard.id = "tool-card-" + toolId;
-                cardEl.replaceWith(newCard);
-                scrollToBottom();
-              }
-            }
-          }
-        } catch (e) { /* ignore parse errors */ }
-      }
+    while (pendingQuestion) {
+      var answer = await waitForAnswer(pendingQuestion, assistantEl);
+      pendingQuestion = await startSseStream("/question/" + pendingQuestion.question_id, { answer: answer }, assistantEl, assistantId, fullReplyRef);
     }
 
     removeMsg(assistantId);
     var assistantTs = nowISO();
-    var assistantMsg = { id: assistantId, role: "assistant", content: fullReply, ts: assistantTs };
+    var assistantMsg = { id: assistantId, role: "assistant", content: fullReplyRef.text, ts: assistantTs };
     msgs.push(assistantMsg);
-    addMsg(assistantId, "assistant", fullReply, { ts: assistantTs });
+    addMsg(assistantId, "assistant", fullReplyRef.text, { ts: assistantTs });
     updateEmpty();
     setStatus("ready", currentMode);
   } catch (err) {

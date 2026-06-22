@@ -51,6 +51,57 @@
             "tools": false,
             "max_tokens": 4096,
             "temperature": 0.9
+        },
+        "focus": {
+            "label": "Focus",
+            "description": "mode autonome multi-modèles pour infra complète",
+            "model": "openai/gpt-oss-120b:free",
+            "fallback_models": [
+                "qwen/qwen3-coder:free",
+                "google/gemma-4-31b-it:free"
+            ],
+            "role": "Orchestrateur de projet autonome",
+            "tools": true,
+            "max_tokens": 8192,
+            "temperature": 0.3,
+            "max_tool_rounds": 20,
+            "sub_models": {
+                "planner": {
+                    "model": "openai/gpt-oss-120b:free",
+                    "fallback": "google/gemma-4-31b-it:free",
+                    "role": "Architecte technique — décompose en étapes précises et ordonnées",
+                    "temperature": 0.2,
+                    "max_tokens": 4096
+                },
+                "coder": {
+                    "model": "qwen/qwen3-coder:free",
+                    "fallback": "cohere/north-mini-code:free",
+                    "role": "Développeur expert — implémente du code propre, testé et documenté",
+                    "temperature": 0.3,
+                    "max_tokens": 8192
+                },
+                "debugger": {
+                    "model": "openai/gpt-oss-120b:free",
+                    "fallback": "qwen/qwen3-coder:free",
+                    "role": "Expert debugging — analyse les erreurs et corrige avec précision",
+                    "temperature": 0.15,
+                    "max_tokens": 8192
+                },
+                "stylist": {
+                    "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "fallback": "google/gemma-4-31b-it:free",
+                    "role": "Lead designer UI/UX — crée des interfaces belles et cohérentes",
+                    "temperature": 0.6,
+                    "max_tokens": 4096
+                },
+                "reviewer": {
+                    "model": "google/gemma-4-31b-it:free",
+                    "fallback": "openai/gpt-oss-120b:free",
+                    "role": "Reviewer technique — vérifie la qualité, la sécurité et la cohérence",
+                    "temperature": 0.2,
+                    "max_tokens": 4096
+                }
+            }
         }
     },
     "context": {
@@ -71,5 +122,5 @@
         "max_tokens_per_request": 8192,
         "max_retries": 3
     },
-    "workspace": ".mochi"
+    "workspace": "C:\\Users\\maximeserenfauconnie\\OneDrive - Région Île-de-France\\Bureau\\Projets\\Agent\\Agent\\.mochi"
 }

@@ -99,6 +99,10 @@ class SettingsIn(BaseModel):
     workspace: str | None = None
 
 
+class AnswerIn(BaseModel):
+    answer: str
+
+
 @app.get("/modes")
 async def get_modes():
     modes = []
@@ -251,6 +255,39 @@ async def chat_stream(body: ChatIn):
                 elif event == "tool_result":
                     name, result = data
                     yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'result': result}, ensure_ascii=False)}\n\n"
+                elif event == "question":
+                    yield f"data: {json.dumps({'type': 'question', 'data': data}, ensure_ascii=False)}\n\n"
+                elif event == "focus_phase":
+                    yield f"data: {json.dumps({'type': 'focus_phase', 'data': data}, ensure_ascii=False)}\n\n"
+                elif event == "focus_plan":
+                    yield f"data: {json.dumps({'type': 'focus_plan', 'data': data}, ensure_ascii=False)}\n\n"
+                elif event == "focus_step_done":
+                    yield f"data: {json.dumps({'type': 'focus_step_done', 'data': data}, ensure_ascii=False)}\n\n"
+                elif event == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'data': data}, ensure_ascii=False)}\n\n"
+                    break
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+@app.post("/question/{qid}")
+async def answer_question(qid: str, body: AnswerIn):
+    async def sse():
+        try:
+            async for event, data in agent.resume_from_answer(qid, body.answer):
+                if event == "content":
+                    yield f"data: {json.dumps({'type': 'content', 'data': data}, ensure_ascii=False)}\n\n"
+                elif event == "tool_call":
+                    name, args = data
+                    yield f"data: {json.dumps({'type': 'tool_call', 'name': name, 'args': args}, ensure_ascii=False)}\n\n"
+                elif event == "tool_result":
+                    name, result = data
+                    yield f"data: {json.dumps({'type': 'tool_result', 'name': name, 'result': result}, ensure_ascii=False)}\n\n"
+                elif event == "question":
+                    yield f"data: {json.dumps({'type': 'question', 'data': data}, ensure_ascii=False)}\n\n"
                 elif event == "error":
                     yield f"data: {json.dumps({'type': 'error', 'data': data}, ensure_ascii=False)}\n\n"
                     break

@@ -3,6 +3,7 @@ import shlex
 import time
 import threading
 import httpx
+import uuid
 from pathlib import Path
 from datetime import datetime
 
@@ -400,6 +401,29 @@ def _web_fetch(url: str) -> dict:
         return _format_result("web_fetch", msg, {"url": url, "error": msg, "duration_ms": dur})
 
 
+_question_store: dict[str, dict] = {}
+
+
+def _ask_user(question: str, options: list[str] | None = None) -> dict:
+    qid = str(uuid.uuid4())[:8]
+    opts = options or []
+    _question_store[qid] = {
+        "question": question,
+        "options": opts,
+        "answered": None,
+    }
+    summary = f"Question posée: {question[:60]}..."
+    t0 = time.monotonic()
+    dur = int((time.monotonic() - t0) * 1000)
+    _log_tool("ask_user", {"question": question, "options": opts}, summary, dur)
+    return _format_result("ask_user", summary, {
+        "question_id": qid,
+        "question": question,
+        "options": opts,
+        "awaiting_answer": True,
+    })
+
+
 TOOLS = [
     ToolDefinition(
         name="edit_file",
@@ -479,6 +503,22 @@ TOOLS = [
             "required": ["url"],
         },
     ),
+    ToolDefinition(
+        name="ask_user",
+        description="Poser une question à l'utilisateur lorsque tu as besoin d'une décision, d'une clarification ou d'un choix. Utilise options pour les choix multiples, ou laisse vide pour réponse libre.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "La question à poser à l'utilisateur"},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Liste d'options pour choix multiples (optionnel - laisse vide pour réponse libre)",
+                },
+            },
+            "required": ["question"],
+        },
+    ),
 ]
 
 _TOOL_MAP = {
@@ -488,6 +528,7 @@ _TOOL_MAP = {
     "list_files": _list_files,
     "run_command": _run_command,
     "web_fetch": _web_fetch,
+    "ask_user": _ask_user,
 }
 
 
